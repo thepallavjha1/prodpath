@@ -52,9 +52,9 @@ Do not start the next phase "while you're here". If a task belongs to a later ph
 
 **Goal:** a concrete, ordered production plan.
 
-- [ ] `providers/base.py`, `providers/aws/rules.py`, `steps.py`
-- [ ] `render.py` produces `PLAN.md` (architecture table with reasons and evidence, ordered steps with commands, risks)
-- [ ] `prodpath plan` end to end on all fixtures
+- [x] `providers/base.py`, `providers/aws/rules.py`, `steps.py`
+- [x] `render.py` produces `PLAN.md` (architecture table with reasons and evidence, ordered steps with commands, risks)
+- [x] `prodpath plan` end to end on all fixtures
 
 **Exit:** the plan for the real monorepo is reviewed by the user; every component has a visible reason and evidence; unknowns are listed, not hidden.
 

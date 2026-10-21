@@ -1,0 +1,295 @@
+{
+  "schema_version": 1,
+  "provider": "aws",
+  "region": "ap-south-1",
+  "environment": "prod",
+  "components": [
+    {
+      "type": "tf-state",
+      "name": "tf-state",
+      "sizing": "1 S3 bucket (versioned, encrypted) + 1 lock table",
+      "reason": "Remote state with locking keeps Terraform safe once more than one person or pipeline applies changes (SECURITY.md section 5).",
+      "serves": [],
+      "evidence": [],
+      "items": []
+    },
+    {
+      "type": "iam-github-oidc",
+      "name": "github-oidc-role",
+      "sizing": "1 IAM role trusted by GitHub Actions via OIDC",
+      "reason": "CI/CD deploys by assuming a role, so no long-lived AWS keys are stored in GitHub.",
+      "serves": [
+        "api",
+        "worker"
+      ],
+      "evidence": [],
+      "items": []
+    },
+    {
+      "type": "vpc",
+      "name": "vpc",
+      "sizing": "2 AZs, public + private subnets, S3 and ECR VPC endpoints",
+      "reason": "Containers and data stores run in private subnets; endpoints avoid NAT data charges for image pulls and S3 traffic.",
+      "serves": [
+        "api",
+        "worker"
+      ],
+      "evidence": [
+        {
+          "path": "api/Dockerfile",
+          "line": 4,
+          "snippet": "EXPOSE 8000"
+        },
+        {
+          "path": "worker/requirements.txt",
+          "line": 1,
+          "snippet": "celery[redis]"
+        }
+      ],
+      "items": []
+    },
+    {
+      "type": "ecs-cluster",
+      "name": "ecs-cluster",
+      "sizing": "1 Fargate-only cluster",
+      "reason": "One cluster runs every container service; Fargate means no servers to patch.",
+      "serves": [
+        "api",
+        "worker"
+      ],
+      "evidence": [
+        {
+          "path": "api/Dockerfile",
+          "line": 4,
+          "snippet": "EXPOSE 8000"
+        },
+        {
+          "path": "worker/requirements.txt",
+          "line": 1,
+          "snippet": "celery[redis]"
+        }
+      ],
+      "items": []
+    },
+    {
+      "type": "alb",
+      "name": "alb",
+      "sizing": "1 Application Load Balancer, host/path routing",
+      "reason": "One shared load balancer for all web services avoids paying for one per service.",
+      "serves": [
+        "api"
+      ],
+      "evidence": [
+        {
+          "path": "api/Dockerfile",
+          "line": 4,
+          "snippet": "EXPOSE 8000"
+        }
+      ],
+      "items": []
+    },
+    {
+      "type": "ecr",
+      "name": "ecr-api",
+      "sizing": "1 repository, scan on push",
+      "reason": "Stores the container image for api.",
+      "serves": [
+        "api"
+      ],
+      "evidence": [
+        {
+          "path": "api/Dockerfile",
+          "line": 4,
+          "snippet": "EXPOSE 8000"
+        }
+      ],
+      "items": []
+    },
+    {
+      "type": "ecr",
+      "name": "ecr-worker",
+      "sizing": "1 repository, scan on push",
+      "reason": "Stores the container image for worker.",
+      "serves": [
+        "worker"
+      ],
+      "evidence": [
+        {
+          "path": "worker/requirements.txt",
+          "line": 1,
+          "snippet": "celery[redis]"
+        }
+      ],
+      "items": []
+    },
+    {
+      "type": "elasticache",
+      "name": "elasticache-redis",
+      "sizing": "cache.t4g.micro, 2 nodes, Multi-AZ",
+      "reason": "Redis (cache, Celery/BullMQ/RQ broker) on ElastiCache.",
+      "serves": [
+        "api",
+        "worker"
+      ],
+      "evidence": [
+        {
+          "path": "api/requirements.txt",
+          "line": 3,
+          "snippet": "celery[redis]"
+        },
+        {
+          "path": "docker-compose.yml",
+          "line": 6,
+          "snippet": "redis: image redis:7"
+        }
+      ],
+      "items": []
+    },
+    {
+      "type": "secrets",
+      "name": "secrets-api",
+      "sizing": "1 secret slot, no values",
+      "reason": "These variables look like credentials or connection strings. Slots are created empty; set values yourself, out of band.",
+      "serves": [
+        "api"
+      ],
+      "evidence": [
+        {
+          "path": "api/main.py",
+          "line": 7,
+          "snippet": "os.getenv(\"REDIS_URL\")"
+        }
+      ],
+      "items": [
+        "REDIS_URL"
+      ]
+    },
+    {
+      "type": "secrets",
+      "name": "secrets-worker",
+      "sizing": "1 secret slot, no values",
+      "reason": "These variables look like credentials or connection strings. Slots are created empty; set values yourself, out of band.",
+      "serves": [
+        "worker"
+      ],
+      "evidence": [
+        {
+          "path": "docker-compose.yml",
+          "line": 6,
+          "snippet": "worker: environment REDIS_URL"
+        }
+      ],
+      "items": [
+        "REDIS_URL"
+      ]
+    },
+    {
+      "type": "log-group",
+      "name": "logs-api",
+      "sizing": "retention 30 days",
+      "reason": "CloudWatch logs with an explicit retention so they cannot grow forever.",
+      "serves": [
+        "api"
+      ],
+      "evidence": [
+        {
+          "path": "api/Dockerfile",
+          "line": 4,
+          "snippet": "EXPOSE 8000"
+        }
+      ],
+      "items": []
+    },
+    {
+      "type": "log-group",
+      "name": "logs-worker",
+      "sizing": "retention 30 days",
+      "reason": "CloudWatch logs with an explicit retention so they cannot grow forever.",
+      "serves": [
+        "worker"
+      ],
+      "evidence": [
+        {
+          "path": "worker/requirements.txt",
+          "line": 1,
+          "snippet": "celery[redis]"
+        }
+      ],
+      "items": []
+    },
+    {
+      "type": "iam-task-role",
+      "name": "role-api",
+      "sizing": "least-privilege task role",
+      "reason": "api gets its own role limited to the resources it uses.",
+      "serves": [
+        "api"
+      ],
+      "evidence": [
+        {
+          "path": "api/Dockerfile",
+          "line": 4,
+          "snippet": "EXPOSE 8000"
+        }
+      ],
+      "items": []
+    },
+    {
+      "type": "iam-task-role",
+      "name": "role-worker",
+      "sizing": "least-privilege task role",
+      "reason": "worker gets its own role limited to the resources it uses.",
+      "serves": [
+        "worker"
+      ],
+      "evidence": [
+        {
+          "path": "worker/requirements.txt",
+          "line": 1,
+          "snippet": "celery[redis]"
+        }
+      ],
+      "items": []
+    },
+    {
+      "type": "ecs-service-web",
+      "name": "ecs-svc-api",
+      "sizing": "Fargate 0.5 vCPU / 1 GB, 2 tasks (default)",
+      "reason": "Stateless HTTP container behind the shared load balancer.",
+      "serves": [
+        "api"
+      ],
+      "evidence": [
+        {
+          "path": "api/Dockerfile",
+          "line": 4,
+          "snippet": "EXPOSE 8000"
+        }
+      ],
+      "items": [
+        "port:8000"
+      ]
+    },
+    {
+      "type": "ecs-service-worker",
+      "name": "ecs-svc-worker",
+      "sizing": "Fargate 0.25 vCPU / 0.5 GB, 2 tasks (default)",
+      "reason": "Background worker: a Fargate service with no load balancer.",
+      "serves": [
+        "worker"
+      ],
+      "evidence": [
+        {
+          "path": "worker/requirements.txt",
+          "line": 1,
+          "snippet": "celery[redis]"
+        }
+      ],
+      "items": []
+    }
+  ],
+  "unknowns": [
+    "Domain name and ACM certificate are needed for HTTPS on the load balancer.",
+    "Traffic and data volume are unknown: all sizing is a default starting point."
+  ]
+}

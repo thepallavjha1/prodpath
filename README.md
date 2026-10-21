@@ -17,7 +17,7 @@ Run it inside a repo and get:
 
 ## Status
 
-Phase 0 (bootstrap). See `MEMORY.md` for the current state and `docs/ROADMAP.md` for the plan.
+Phases 0 to 4 built (scan, facts, local-LLM summaries, AWS plan). See `MEMORY.md` for the current state and `docs/ROADMAP.md` for the plan.
 
 ## Quickstart (once Phase 0 is done)
 

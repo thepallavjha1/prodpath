@@ -1,0 +1,634 @@
+{
+  "schema_version": 1,
+  "provider": "aws",
+  "region": "ap-south-1",
+  "environment": "prod",
+  "components": [
+    {
+      "type": "tf-state",
+      "name": "tf-state",
+      "sizing": "1 S3 bucket (versioned, encrypted) + 1 lock table",
+      "reason": "Remote state with locking keeps Terraform safe once more than one person or pipeline applies changes (SECURITY.md section 5).",
+      "serves": [],
+      "evidence": [],
+      "items": []
+    },
+    {
+      "type": "iam-github-oidc",
+      "name": "github-oidc-role",
+      "sizing": "1 IAM role trusted by GitHub Actions via OIDC",
+      "reason": "CI/CD deploys by assuming a role, so no long-lived AWS keys are stored in GitHub.",
+      "serves": [
+        "apps-billing",
+        "apps-gateway",
+        "apps-notifier",
+        "apps-reports",
+        "apps-users",
+        "apps-web"
+      ],
+      "evidence": [],
+      "items": []
+    },
+    {
+      "type": "vpc",
+      "name": "vpc",
+      "sizing": "2 AZs, public + private subnets, S3 and ECR VPC endpoints",
+      "reason": "Containers and data stores run in private subnets; endpoints avoid NAT data charges for image pulls and S3 traffic.",
+      "serves": [
+        "apps-billing",
+        "apps-gateway",
+        "apps-notifier",
+        "apps-reports",
+        "apps-users",
+        "apps-web"
+      ],
+      "evidence": [
+        {
+          "path": "apps/billing/Dockerfile",
+          "line": 3,
+          "snippet": "EXPOSE 8000"
+        },
+        {
+          "path": "apps/gateway/Dockerfile",
+          "line": 3,
+          "snippet": "EXPOSE 3000"
+        },
+        {
+          "path": "apps/notifier/Dockerfile",
+          "line": 3,
+          "snippet": "EXPOSE 3000"
+        }
+      ],
+      "items": []
+    },
+    {
+      "type": "ecs-cluster",
+      "name": "ecs-cluster",
+      "sizing": "1 Fargate-only cluster",
+      "reason": "One cluster runs every container service; Fargate means no servers to patch.",
+      "serves": [
+        "apps-billing",
+        "apps-gateway",
+        "apps-notifier",
+        "apps-reports",
+        "apps-users",
+        "apps-web"
+      ],
+      "evidence": [
+        {
+          "path": "apps/billing/Dockerfile",
+          "line": 3,
+          "snippet": "EXPOSE 8000"
+        },
+        {
+          "path": "apps/gateway/Dockerfile",
+          "line": 3,
+          "snippet": "EXPOSE 3000"
+        },
+        {
+          "path": "apps/notifier/Dockerfile",
+          "line": 3,
+          "snippet": "EXPOSE 3000"
+        }
+      ],
+      "items": []
+    },
+    {
+      "type": "alb",
+      "name": "alb",
+      "sizing": "1 Application Load Balancer, host/path routing",
+      "reason": "One shared load balancer for all web services avoids paying for one per service.",
+      "serves": [
+        "apps-billing",
+        "apps-gateway",
+        "apps-notifier",
+        "apps-users",
+        "apps-web"
+      ],
+      "evidence": [
+        {
+          "path": "apps/billing/Dockerfile",
+          "line": 3,
+          "snippet": "EXPOSE 8000"
+        },
+        {
+          "path": "apps/gateway/Dockerfile",
+          "line": 3,
+          "snippet": "EXPOSE 3000"
+        },
+        {
+          "path": "apps/notifier/Dockerfile",
+          "line": 3,
+          "snippet": "EXPOSE 3000"
+        }
+      ],
+      "items": []
+    },
+    {
+      "type": "ecr",
+      "name": "ecr-apps-billing",
+      "sizing": "1 repository, scan on push",
+      "reason": "Stores the container image for apps-billing.",
+      "serves": [
+        "apps-billing"
+      ],
+      "evidence": [
+        {
+          "path": "apps/billing/Dockerfile",
+          "line": 3,
+          "snippet": "EXPOSE 8000"
+        }
+      ],
+      "items": []
+    },
+    {
+      "type": "ecr",
+      "name": "ecr-apps-gateway",
+      "sizing": "1 repository, scan on push",
+      "reason": "Stores the container image for apps-gateway.",
+      "serves": [
+        "apps-gateway"
+      ],
+      "evidence": [
+        {
+          "path": "apps/gateway/Dockerfile",
+          "line": 3,
+          "snippet": "EXPOSE 3000"
+        }
+      ],
+      "items": []
+    },
+    {
+      "type": "ecr",
+      "name": "ecr-apps-notifier",
+      "sizing": "1 repository, scan on push",
+      "reason": "Stores the container image for apps-notifier.",
+      "serves": [
+        "apps-notifier"
+      ],
+      "evidence": [
+        {
+          "path": "apps/notifier/Dockerfile",
+          "line": 3,
+          "snippet": "EXPOSE 3000"
+        }
+      ],
+      "items": []
+    },
+    {
+      "type": "ecr",
+      "name": "ecr-apps-reports",
+      "sizing": "1 repository, scan on push",
+      "reason": "Stores the container image for apps-reports.",
+      "serves": [
+        "apps-reports"
+      ],
+      "evidence": [
+        {
+          "path": "apps/reports/Dockerfile",
+          "line": 1,
+          "snippet": "FROM python:3.12-slim"
+        }
+      ],
+      "items": []
+    },
+    {
+      "type": "ecr",
+      "name": "ecr-apps-users",
+      "sizing": "1 repository, scan on push",
+      "reason": "Stores the container image for apps-users.",
+      "serves": [
+        "apps-users"
+      ],
+      "evidence": [
+        {
+          "path": "apps/users/Dockerfile",
+          "line": 3,
+          "snippet": "EXPOSE 8000"
+        }
+      ],
+      "items": []
+    },
+    {
+      "type": "ecr",
+      "name": "ecr-apps-web",
+      "sizing": "1 repository, scan on push",
+      "reason": "Stores the container image for apps-web.",
+      "serves": [
+        "apps-web"
+      ],
+      "evidence": [
+        {
+          "path": "apps/web/Dockerfile",
+          "line": 3,
+          "snippet": "EXPOSE 3000"
+        }
+      ],
+      "items": []
+    },
+    {
+      "type": "rds",
+      "name": "rds-postgres",
+      "sizing": "db.t4g.small, 20 GB gp3, Multi-AZ, backups on",
+      "reason": "postgres is a managed relational database on RDS. One instance serves every service that uses it (give each its own database and user).",
+      "serves": [
+        "apps-billing"
+      ],
+      "evidence": [
+        {
+          "path": "apps/billing/requirements.txt",
+          "line": 2,
+          "snippet": "psycopg2-binary"
+        }
+      ],
+      "items": []
+    },
+    {
+      "type": "elasticache",
+      "name": "elasticache-redis",
+      "sizing": "cache.t4g.micro, 2 nodes, Multi-AZ",
+      "reason": "Redis (cache, Celery/BullMQ/RQ broker) on ElastiCache.",
+      "serves": [
+        "apps-users"
+      ],
+      "evidence": [
+        {
+          "path": "apps/users/app.py",
+          "line": 1,
+          "snippet": "import redis"
+        }
+      ],
+      "items": []
+    },
+    {
+      "type": "secrets",
+      "name": "secrets-apps-billing",
+      "sizing": "1 secret slot, no values",
+      "reason": "These variables look like credentials or connection strings. Slots are created empty; set values yourself, out of band.",
+      "serves": [
+        "apps-billing"
+      ],
+      "evidence": [
+        {
+          "path": "apps/billing/app.py",
+          "line": 6,
+          "snippet": "os.environ[\"DATABASE_URL\"]"
+        }
+      ],
+      "items": [
+        "DATABASE_URL"
+      ]
+    },
+    {
+      "type": "secrets",
+      "name": "secrets-apps-gateway",
+      "sizing": "2 secret slots, no values",
+      "reason": "These variables look like credentials or connection strings. Slots are created empty; set values yourself, out of band.",
+      "serves": [
+        "apps-gateway"
+      ],
+      "evidence": [
+        {
+          "path": "apps/gateway/server.js",
+          "line": 5,
+          "snippet": "process.env.BILLING_URL"
+        },
+        {
+          "path": "apps/gateway/server.js",
+          "line": 6,
+          "snippet": "process.env[\"USERS_URL\"]"
+        }
+      ],
+      "items": [
+        "BILLING_URL",
+        "USERS_URL"
+      ]
+    },
+    {
+      "type": "log-group",
+      "name": "logs-apps-billing",
+      "sizing": "retention 30 days",
+      "reason": "CloudWatch logs with an explicit retention so they cannot grow forever.",
+      "serves": [
+        "apps-billing"
+      ],
+      "evidence": [
+        {
+          "path": "apps/billing/Dockerfile",
+          "line": 3,
+          "snippet": "EXPOSE 8000"
+        }
+      ],
+      "items": []
+    },
+    {
+      "type": "log-group",
+      "name": "logs-apps-gateway",
+      "sizing": "retention 30 days",
+      "reason": "CloudWatch logs with an explicit retention so they cannot grow forever.",
+      "serves": [
+        "apps-gateway"
+      ],
+      "evidence": [
+        {
+          "path": "apps/gateway/Dockerfile",
+          "line": 3,
+          "snippet": "EXPOSE 3000"
+        }
+      ],
+      "items": []
+    },
+    {
+      "type": "log-group",
+      "name": "logs-apps-notifier",
+      "sizing": "retention 30 days",
+      "reason": "CloudWatch logs with an explicit retention so they cannot grow forever.",
+      "serves": [
+        "apps-notifier"
+      ],
+      "evidence": [
+        {
+          "path": "apps/notifier/Dockerfile",
+          "line": 3,
+          "snippet": "EXPOSE 3000"
+        }
+      ],
+      "items": []
+    },
+    {
+      "type": "log-group",
+      "name": "logs-apps-reports",
+      "sizing": "retention 30 days",
+      "reason": "CloudWatch logs with an explicit retention so they cannot grow forever.",
+      "serves": [
+        "apps-reports"
+      ],
+      "evidence": [
+        {
+          "path": "apps/reports/Dockerfile",
+          "line": 1,
+          "snippet": "FROM python:3.12-slim"
+        }
+      ],
+      "items": []
+    },
+    {
+      "type": "log-group",
+      "name": "logs-apps-users",
+      "sizing": "retention 30 days",
+      "reason": "CloudWatch logs with an explicit retention so they cannot grow forever.",
+      "serves": [
+        "apps-users"
+      ],
+      "evidence": [
+        {
+          "path": "apps/users/Dockerfile",
+          "line": 3,
+          "snippet": "EXPOSE 8000"
+        }
+      ],
+      "items": []
+    },
+    {
+      "type": "log-group",
+      "name": "logs-apps-web",
+      "sizing": "retention 30 days",
+      "reason": "CloudWatch logs with an explicit retention so they cannot grow forever.",
+      "serves": [
+        "apps-web"
+      ],
+      "evidence": [
+        {
+          "path": "apps/web/Dockerfile",
+          "line": 3,
+          "snippet": "EXPOSE 3000"
+        }
+      ],
+      "items": []
+    },
+    {
+      "type": "iam-task-role",
+      "name": "role-apps-billing",
+      "sizing": "least-privilege task role",
+      "reason": "apps-billing gets its own role limited to the resources it uses.",
+      "serves": [
+        "apps-billing"
+      ],
+      "evidence": [
+        {
+          "path": "apps/billing/Dockerfile",
+          "line": 3,
+          "snippet": "EXPOSE 8000"
+        }
+      ],
+      "items": []
+    },
+    {
+      "type": "iam-task-role",
+      "name": "role-apps-gateway",
+      "sizing": "least-privilege task role",
+      "reason": "apps-gateway gets its own role limited to the resources it uses.",
+      "serves": [
+        "apps-gateway"
+      ],
+      "evidence": [
+        {
+          "path": "apps/gateway/Dockerfile",
+          "line": 3,
+          "snippet": "EXPOSE 3000"
+        }
+      ],
+      "items": []
+    },
+    {
+      "type": "iam-task-role",
+      "name": "role-apps-notifier",
+      "sizing": "least-privilege task role",
+      "reason": "apps-notifier gets its own role limited to the resources it uses.",
+      "serves": [
+        "apps-notifier"
+      ],
+      "evidence": [
+        {
+          "path": "apps/notifier/Dockerfile",
+          "line": 3,
+          "snippet": "EXPOSE 3000"
+        }
+      ],
+      "items": []
+    },
+    {
+      "type": "iam-task-role",
+      "name": "role-apps-reports",
+      "sizing": "least-privilege task role",
+      "reason": "apps-reports gets its own role limited to the resources it uses.",
+      "serves": [
+        "apps-reports"
+      ],
+      "evidence": [
+        {
+          "path": "apps/reports/Dockerfile",
+          "line": 1,
+          "snippet": "FROM python:3.12-slim"
+        }
+      ],
+      "items": []
+    },
+    {
+      "type": "iam-task-role",
+      "name": "role-apps-users",
+      "sizing": "least-privilege task role",
+      "reason": "apps-users gets its own role limited to the resources it uses.",
+      "serves": [
+        "apps-users"
+      ],
+      "evidence": [
+        {
+          "path": "apps/users/Dockerfile",
+          "line": 3,
+          "snippet": "EXPOSE 8000"
+        }
+      ],
+      "items": []
+    },
+    {
+      "type": "iam-task-role",
+      "name": "role-apps-web",
+      "sizing": "least-privilege task role",
+      "reason": "apps-web gets its own role limited to the resources it uses.",
+      "serves": [
+        "apps-web"
+      ],
+      "evidence": [
+        {
+          "path": "apps/web/Dockerfile",
+          "line": 3,
+          "snippet": "EXPOSE 3000"
+        }
+      ],
+      "items": []
+    },
+    {
+      "type": "ecs-service-web",
+      "name": "ecs-svc-apps-billing",
+      "sizing": "Fargate 0.5 vCPU / 1 GB, 2 tasks (default)",
+      "reason": "Stateless HTTP container behind the shared load balancer.",
+      "serves": [
+        "apps-billing"
+      ],
+      "evidence": [
+        {
+          "path": "apps/billing/Dockerfile",
+          "line": 3,
+          "snippet": "EXPOSE 8000"
+        }
+      ],
+      "items": [
+        "port:8000"
+      ]
+    },
+    {
+      "type": "ecs-service-web",
+      "name": "ecs-svc-apps-gateway",
+      "sizing": "Fargate 0.5 vCPU / 1 GB, 2 tasks (default)",
+      "reason": "Stateless HTTP container behind the shared load balancer.",
+      "serves": [
+        "apps-gateway"
+      ],
+      "evidence": [
+        {
+          "path": "apps/gateway/Dockerfile",
+          "line": 3,
+          "snippet": "EXPOSE 3000"
+        }
+      ],
+      "items": [
+        "port:3000",
+        "health:/health"
+      ]
+    },
+    {
+      "type": "ecs-service-web",
+      "name": "ecs-svc-apps-notifier",
+      "sizing": "Fargate 0.5 vCPU / 1 GB, 2 tasks (default)",
+      "reason": "Stateless HTTP container behind the shared load balancer.",
+      "serves": [
+        "apps-notifier"
+      ],
+      "evidence": [
+        {
+          "path": "apps/notifier/Dockerfile",
+          "line": 3,
+          "snippet": "EXPOSE 3000"
+        }
+      ],
+      "items": [
+        "port:3000",
+        "health:/health"
+      ]
+    },
+    {
+      "type": "ecs-service-web",
+      "name": "ecs-svc-apps-users",
+      "sizing": "Fargate 0.5 vCPU / 1 GB, 2 tasks (default)",
+      "reason": "Stateless HTTP container behind the shared load balancer.",
+      "serves": [
+        "apps-users"
+      ],
+      "evidence": [
+        {
+          "path": "apps/users/Dockerfile",
+          "line": 3,
+          "snippet": "EXPOSE 8000"
+        }
+      ],
+      "items": [
+        "port:8000"
+      ]
+    },
+    {
+      "type": "ecs-service-web",
+      "name": "ecs-svc-apps-web",
+      "sizing": "Fargate 0.5 vCPU / 1 GB, 2 tasks (default)",
+      "reason": "Stateless HTTP container behind the shared load balancer.",
+      "serves": [
+        "apps-web"
+      ],
+      "evidence": [
+        {
+          "path": "apps/web/Dockerfile",
+          "line": 3,
+          "snippet": "EXPOSE 3000"
+        }
+      ],
+      "items": [
+        "port:3000",
+        "health:/health"
+      ]
+    },
+    {
+      "type": "scheduled-task",
+      "name": "cron-apps-reports",
+      "sizing": "Fargate 0.25 vCPU / 0.5 GB per run",
+      "reason": "Scheduled job: EventBridge Scheduler starts a one-off Fargate task.",
+      "serves": [
+        "apps-reports"
+      ],
+      "evidence": [
+        {
+          "path": "apps/reports/Dockerfile",
+          "line": 1,
+          "snippet": "FROM python:3.12-slim"
+        }
+      ],
+      "items": []
+    }
+  ],
+  "unknowns": [
+    "Domain name and ACM certificate are needed for HTTPS on the load balancer.",
+    "Traffic and data volume are unknown: all sizing is a default starting point.",
+    "apps-reports: the schedule was not extracted; set the cron expression yourself.",
+    "apps-reports: writes local files; container disk is ephemeral. Move that state to S3 or a database before relying on it.",
+    "apps-web: writes local files; container disk is ephemeral. Move that state to S3 or a database before relying on it."
+  ]
+}

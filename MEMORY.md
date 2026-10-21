@@ -15,11 +15,10 @@ Keep it short, factual and current. History goes in the changelog; design lives 
 
 ## Current state
 
-- Phase: **3 (local LLM summaries) implemented; Phases 1 to 3 all wait on the real-monorepo check.** Remaining Phase 3 exit item: the user defines an acceptable cold-run time for the real monorepo.
-- Works: `prodpath doctor [--model]` (real checks), `prodpath summarize [--path --model --num-ctx]` (writes `.prodpath/summaries.json`), `llm.py` (OllamaLLM, FakeLLM, repair retry, response cache, call stats), `summarize.py` (budgeted prompts, evidence-id validation resolved to path:line, rule summaries for fact-less services), `scripts/benchmark_models.py`. 92 fast tests plus 1 `-m llm` test green; ruff and mypy --strict clean.
-- Benchmark (9 services, ADR-013): phi3 100% valid / 100% cited / 12.3 s per call; llama3.1 100% / 96% / 33.1 s. Default model: `phi3:latest`.
+- Phase: **4 (AWS architecture choice and PLAN.md) implemented; Phases 1 to 4 all wait on the user's real-monorepo review.** Phase 4 exit: the user reviews the plan for the real monorepo; every component already shows a reason and evidence, unknowns are listed.
+- Works: `prodpath plan [--path --region --env prod|nonprod]` writes `.prodpath/architecture.json` and `.prodpath/out/PLAN.md` with no LLM; reads `.prodpath/summaries.json` if present. Modules: `providers/{base,__init__}.py`, `providers/aws/{rules,steps}.py`, `render.py`. Goldens for architecture and PLAN on mono_a/b/c. 124 fast tests, ruff, mypy --strict green.
 - Code is at https://github.com/thepallavjha1/prodpath (public, main). Commit and push after each task.
-- Next action: user runs `scan`, `facts` and `summarize` on the real monorepo, spot-checks services and 10 facts, and states an acceptable cold-run time. Then Phase 4 (AWS architecture choice and PLAN.md) on the user's go-ahead.
+- Next action: user runs `scan`, `facts`, `summarize`, `plan` on the real monorepo and reviews PLAN.md, spot-checks 10 facts, states an acceptable cold-run time and confirms the AWS region. Then Phase 5 (Terraform generation) on the user's go-ahead.
 
 ## Decisions (short form; details in docs/DECISIONS.md)
 
@@ -55,10 +54,14 @@ Keep it short, factual and current. History goes in the changelog; design lives 
 - Shared infra is only detected through compose image-only services; two services both using psycopg2 are not assumed to share a database.
 - Ollama models present: phi3:latest (2.2 GB), llama3.1:latest (4.9 GB). Models are pulled by the user, never by the tool. llama3.1 spills to CPU on 4 GB VRAM.
 - Summary claims store `path:line` refs, not the prompt ids (F1...); the ids only exist inside one prompt.
+- Steps are AWS CLI with placeholders because Terraform does not exist until Phase 5; revisit the Steps section of PLAN.md then.
+- Secret slots: any env var name matching PASSWORD/SECRET/TOKEN/API_KEY/PRIVATE/CREDENTIAL/_URL/_URI/_DSN (URLs may embed credentials). Over-inclusive on purpose.
+- Component evidence uses a service's anchor fact (port, framework, worker, runtime) rather than its first fact; alphabetical fact order made `redis` look like the reason for the ECS service.
 - Build backend is hatchling (needed so `prodpath` is installable as a console script).
 
 ## Changelog
 
+- 2026-10-21 | phase-4 | Added Provider protocol, AWS rules and steps, render.py, `prodpath plan`, Prefs/Step models and richer Component/Architecture (ADR-014); goldens for plans | Phase 4 roadmap | src/prodpath/{providers,render,cli,models}.py, tests/*, docs/*
 - 2026-10-21 | phase-3 | Added llm.py, summarize.py, doctor.py, `summarize` and real `doctor` commands, benchmark script, Summaries models, llm_cache table; chose phi3 default (ADR-012, ADR-013) | Phase 3 roadmap | src/prodpath/*, scripts/*, tests/*, docs/*
 - 2026-10-21 | phase-2 | Added facts/* extractors, extract.py, edges.py, redact.py, `prodpath facts`, SystemModel.not_analyzed, goldens and invariants (ADR-011) | Phase 2 roadmap | src/prodpath/*, tests/*, docs/*
 - 2026-10-21 | phase-1 | Added scan.py, detect.py, cache.py, `prodpath scan`, FileEntry/Inventory/ServiceCandidate models, golden + rule + cache tests; added pyyaml (ADR-010) | Phase 1 roadmap | src/prodpath/{scan,detect,cache,cli,models}.py, tests/*, docs/*

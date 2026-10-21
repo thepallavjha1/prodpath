@@ -81,19 +81,45 @@ class Usage(BaseModel):  # forecast inputs
     assumptions: list[UsageAssumption]
 
 
+class Prefs(BaseModel):  # user choices for "choose" (CLI flags)
+    provider: Literal["aws"] = "aws"
+    region: str = "ap-south-1"
+    environment: Literal["prod", "nonprod"] = "prod"  # prod: Multi-AZ data stores, 2 tasks
+
+
 class Component(BaseModel):
-    type: str
-    name: str
-    sizing: str
-    reason: str  # shown in the plan
+    type: str  # "vpc", "ecs-service-web", "rds", ... (provider vocabulary)
+    name: str  # stable and unique, e.g. "rds-postgres"
+    sizing: str  # a default starting point; says so when not derived from code
+    reason: str  # shown in the plan, never empty
     serves: list[str]  # service ids
+    evidence: list[Evidence] = []  # triggering facts; empty only for account-level pieces
+    items: list[str] = []  # extra detail the steps need: ports, health paths, secret names
+
+    @field_validator("reason")
+    @classmethod
+    def _reason_not_empty(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("a Component needs a reason")
+        return value
 
 
 class Architecture(BaseModel):  # provider-specific output of "choose"
     schema_version: int = SCHEMA_VERSION
     provider: str
     region: str
+    environment: str
     components: list[Component]
+    unknowns: list[str] = []  # what the tool could not determine; listed in the plan
+
+
+class Step(BaseModel):  # one ordered deployment step in PLAN.md
+    id: str
+    title: str
+    why: str
+    commands: list[str]  # AWS CLI / shell with <PLACEHOLDERS>; no credentials, no account ids
+    verify: str
+    components: list[str]  # component names this step creates
 
 
 class CostLine(BaseModel):

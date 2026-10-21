@@ -81,4 +81,10 @@ Format: **Status** | **Context** | **Decision** | **Consequences**.
 - **Decision:** Default to `phi3:latest`. It meets the 95% validity target, cites better, and is 2.7x faster. Sample is small (9 calls per model); rerun the benchmark when the real monorepo or a new model is available.
 - **Consequences:** A 40-service cold run is about 40 x 12 s = 8 minutes plus the overview call; a warm run is served from the response cache. Quality of prose was not graded, only structure and evidence.
 
-<!-- Add new ADRs below. Next number: ADR-014 -->
+## ADR-014: Phase 4 contracts and provider scope
+- **Status:** Accepted (2026-10-21), chosen by Claude
+- **Context:** Phase 4 needs `Prefs`, `Step` and richer `Component`/`Architecture` contracts (evidence per component, unknowns list). Terraform does not exist until Phase 5, so steps cannot point at it.
+- **Decision:** Add `Prefs` and `Step` to `models.py`; extend `Component` with `evidence` and `items`, and `Architecture` with `environment` and `unknowns`. `Provider` protocol declares only `choose` and `steps` for now. New modules: `render.py`, `providers/base.py`, `providers/__init__.py`, `providers/aws/rules.py`, `providers/aws/steps.py`. Steps use AWS CLI with placeholders. No new dependency, no LLM in stage 5.
+- **Consequences:** `prodpath plan` is deterministic and works offline. The plan must be re-checked when Phase 5 replaces CLI steps with Terraform. Default region `ap-south-1` is unconfirmed by the user and is listed as an open question in every plan.
+
+<!-- Add new ADRs below. Next number: ADR-015 -->

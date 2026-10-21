@@ -2,7 +2,7 @@ from pathlib import Path
 
 from prodpath.cache import HashCache
 from prodpath.detect import detect_services
-from prodpath.models import ServiceCandidate
+from prodpath.models import Evidence, Fact, Service, ServiceCandidate
 from prodpath.scan import ScanStats, scan_repo
 
 
@@ -22,3 +22,12 @@ def write_files(root: Path, files: dict[str, str]) -> None:
         target = root / rel_path
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content, encoding="utf-8")
+
+
+def make_fact(kind: str, value: str, path: str = "svc/app.py", line: int = 1) -> Fact:
+    evidence = [Evidence(path=path, line=line, snippet="x")]
+    return Fact(kind=kind, value=value, evidence=evidence, certainty="parsed")  # type: ignore[arg-type]
+
+
+def make_service(sid: str, kind: str, facts: list[Fact]) -> Service:
+    return Service(id=sid, root=sid, kind=kind, facts=facts)  # type: ignore[arg-type]

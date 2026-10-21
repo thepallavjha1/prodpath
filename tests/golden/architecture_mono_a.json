@@ -1,0 +1,214 @@
+{
+  "schema_version": 1,
+  "provider": "aws",
+  "region": "ap-south-1",
+  "environment": "prod",
+  "components": [
+    {
+      "type": "tf-state",
+      "name": "tf-state",
+      "sizing": "1 S3 bucket (versioned, encrypted) + 1 lock table",
+      "reason": "Remote state with locking keeps Terraform safe once more than one person or pipeline applies changes (SECURITY.md section 5).",
+      "serves": [],
+      "evidence": [],
+      "items": []
+    },
+    {
+      "type": "iam-github-oidc",
+      "name": "github-oidc-role",
+      "sizing": "1 IAM role trusted by GitHub Actions via OIDC",
+      "reason": "CI/CD deploys by assuming a role, so no long-lived AWS keys are stored in GitHub.",
+      "serves": [
+        "root"
+      ],
+      "evidence": [],
+      "items": []
+    },
+    {
+      "type": "vpc",
+      "name": "vpc",
+      "sizing": "2 AZs, public + private subnets, S3 and ECR VPC endpoints",
+      "reason": "Containers and data stores run in private subnets; endpoints avoid NAT data charges for image pulls and S3 traffic.",
+      "serves": [
+        "root"
+      ],
+      "evidence": [
+        {
+          "path": "Dockerfile",
+          "line": 5,
+          "snippet": "EXPOSE 8000"
+        }
+      ],
+      "items": []
+    },
+    {
+      "type": "ecs-cluster",
+      "name": "ecs-cluster",
+      "sizing": "1 Fargate-only cluster",
+      "reason": "One cluster runs every container service; Fargate means no servers to patch.",
+      "serves": [
+        "root"
+      ],
+      "evidence": [
+        {
+          "path": "Dockerfile",
+          "line": 5,
+          "snippet": "EXPOSE 8000"
+        }
+      ],
+      "items": []
+    },
+    {
+      "type": "alb",
+      "name": "alb",
+      "sizing": "1 Application Load Balancer, host/path routing",
+      "reason": "One shared load balancer for all web services avoids paying for one per service.",
+      "serves": [
+        "root"
+      ],
+      "evidence": [
+        {
+          "path": "Dockerfile",
+          "line": 5,
+          "snippet": "EXPOSE 8000"
+        }
+      ],
+      "items": []
+    },
+    {
+      "type": "ecr",
+      "name": "ecr-root",
+      "sizing": "1 repository, scan on push",
+      "reason": "Stores the container image for root.",
+      "serves": [
+        "root"
+      ],
+      "evidence": [
+        {
+          "path": "Dockerfile",
+          "line": 5,
+          "snippet": "EXPOSE 8000"
+        }
+      ],
+      "items": []
+    },
+    {
+      "type": "rds",
+      "name": "rds-postgres",
+      "sizing": "db.t4g.small, 20 GB gp3, Multi-AZ, backups on",
+      "reason": "postgres is a managed relational database on RDS. One instance serves every service that uses it (give each its own database and user).",
+      "serves": [
+        "root"
+      ],
+      "evidence": [
+        {
+          "path": "requirements.txt",
+          "line": 2,
+          "snippet": "psycopg2-binary"
+        }
+      ],
+      "items": []
+    },
+    {
+      "type": "s3",
+      "name": "s3-root",
+      "sizing": "private bucket, encryption on, versioning on",
+      "reason": "Code uses object storage (S3). Bucket names were not extracted.",
+      "serves": [
+        "root"
+      ],
+      "evidence": [
+        {
+          "path": "app/config.py",
+          "line": 4,
+          "snippet": "boto3.client(\"s3\")"
+        }
+      ],
+      "items": []
+    },
+    {
+      "type": "secrets",
+      "name": "secrets-root",
+      "sizing": "2 secret slots, no values",
+      "reason": "These variables look like credentials or connection strings. Slots are created empty; set values yourself, out of band.",
+      "serves": [
+        "root"
+      ],
+      "evidence": [
+        {
+          "path": ".env",
+          "line": 1,
+          "snippet": "DATABASE_URL="
+        },
+        {
+          "path": ".env",
+          "line": 2,
+          "snippet": "FLASK_SECRET=[REDACTED]"
+        }
+      ],
+      "items": [
+        "DATABASE_URL",
+        "FLASK_SECRET"
+      ]
+    },
+    {
+      "type": "log-group",
+      "name": "logs-root",
+      "sizing": "retention 30 days",
+      "reason": "CloudWatch logs with an explicit retention so they cannot grow forever.",
+      "serves": [
+        "root"
+      ],
+      "evidence": [
+        {
+          "path": "Dockerfile",
+          "line": 5,
+          "snippet": "EXPOSE 8000"
+        }
+      ],
+      "items": []
+    },
+    {
+      "type": "iam-task-role",
+      "name": "role-root",
+      "sizing": "least-privilege task role",
+      "reason": "root gets its own role limited to the resources it uses.",
+      "serves": [
+        "root"
+      ],
+      "evidence": [
+        {
+          "path": "Dockerfile",
+          "line": 5,
+          "snippet": "EXPOSE 8000"
+        }
+      ],
+      "items": []
+    },
+    {
+      "type": "ecs-service-web",
+      "name": "ecs-svc-root",
+      "sizing": "Fargate 0.5 vCPU / 1 GB, 2 tasks (default)",
+      "reason": "Stateless HTTP container behind the shared load balancer.",
+      "serves": [
+        "root"
+      ],
+      "evidence": [
+        {
+          "path": "Dockerfile",
+          "line": 5,
+          "snippet": "EXPOSE 8000"
+        }
+      ],
+      "items": [
+        "port:8000",
+        "health:/health"
+      ]
+    }
+  ],
+  "unknowns": [
+    "Domain name and ACM certificate are needed for HTTPS on the load balancer.",
+    "Traffic and data volume are unknown: all sizing is a default starting point.",
+    "root: writes local files; container disk is ephemeral. Move that state to S3 or a database before relying on it."
+  ]
+}

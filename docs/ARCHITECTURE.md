@@ -125,10 +125,38 @@ class Usage(BaseModel):  # forecast inputs
     ]  # name, value, unit, source: "user" | "default" | "inferred", note
 
 
+class Prefs(BaseModel):  # user choices for "choose" (CLI flags)
+    provider: Literal["aws"] = "aws"
+    region: str = "ap-south-1"
+    environment: Literal["prod", "nonprod"] = "prod"  # prod: Multi-AZ data stores, 2 tasks
+
+
+class Component(BaseModel):
+    type: str  # "vpc", "ecs-service-web", "rds", ... (provider vocabulary)
+    name: str  # stable, unique, e.g. "rds-postgres", "ecs-svc-apps-billing"
+    sizing: str  # a default starting point; says so when not derived from code
+    reason: str  # shown in the plan, never empty
+    serves: list[str]  # service ids
+    evidence: list[Evidence]  # facts that triggered it; empty only for account-level pieces
+    items: list[str]  # extra detail the steps need: ports, health paths, secret names
+
+
 class Architecture(BaseModel):  # provider-specific output of "choose"
+    schema_version: int
     provider: str
     region: str
-    components: list[Component]  # type, name, sizing, reason, serves: list[service ids]
+    environment: str
+    components: list[Component]
+    unknowns: list[str]  # things the tool could not determine; listed in the plan, not hidden
+
+
+class Step(BaseModel):  # one ordered deployment step in PLAN.md
+    id: str
+    title: str
+    why: str
+    commands: list[str]  # AWS CLI / shell with <PLACEHOLDERS>; no credentials, no account ids
+    verify: str
+    components: list[str]  # component names this step creates
 
 
 class CostLine(BaseModel):
@@ -279,6 +307,8 @@ class Provider(Protocol):
     def render_iac(self, arch: Architecture) -> dict[str, str]: ...  # filename -> content
 ```
 
+**Implementation notes (Phase 4).** `providers/base.py` defines `Provider` with only the methods implemented so far (`choose`, `steps`); `forecast`, `traps` and `render_iac` are added in Phases 5 and 6. `providers/aws/rules.py` is a list of small rule functions, each returning components with a `reason` and the triggering facts as `evidence`. Stage 5 uses no LLM in Phase 4 (rules are never unsure); `plan` reads `.prodpath/summaries.json` if `summarize` was run, to show each service's purpose, and says so when absent. Shared by design: one VPC, ECS cluster and ALB; one RDS or ElastiCache per engine serving every service that uses it (a risk the plan states). A single deployable web service with no datastore or cache gets App Runner instead of Fargate and an ALB. Secret slots are created for env var names that look like credentials or connection URLs; values are never known. `render.py` writes `.prodpath/out/PLAN.md` with a header (tool version, timestamp, input hash), sections for services, architecture, ordered steps, risks, unknowns, not analyzed, and "Not verified by this tool". Terraform is not generated yet, so steps use AWS CLI commands with placeholders and say so.
+
 ### AWS provider (`providers/aws/`)
 
 | File | Responsibility |
@@ -324,7 +354,7 @@ prodpath doctor               # checks Ollama, model, GPU/VRAM, terraform presen
 prodpath scan                 # stages 1-2
 prodpath facts                # stages 1-3; writes .prodpath/system.json, prints facts per service
 prodpath summarize            # stages 1-4 (needs Ollama); writes .prodpath/summaries.json
-prodpath plan                 # stages 1-5 and 7 (plan + terraform)
+prodpath plan                 # stages 1-5 and 7 (PLAN.md now; terraform from Phase 5); needs no LLM
 prodpath forecast             # stage 6 (needs a plan)
 prodpath run                  # everything
 prodpath prices update        # the only networked command (AWS Price List)

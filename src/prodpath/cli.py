@@ -1,6 +1,7 @@
 import argparse
 import logging
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 
 from prodpath import __version__
@@ -15,7 +16,9 @@ from prodpath.llm import (
     LLMError,
     OllamaLLM,
 )
-from prodpath.models import Inventory, ServiceCandidate, Summaries, SystemModel
+from prodpath.models import Inventory, Prefs, ServiceCandidate, Summaries, SystemModel
+from prodpath.providers import get_provider
+from prodpath.render import render_plan
 from prodpath.scan import scan_repo
 from prodpath.summarize import summarize_system
 
@@ -41,6 +44,11 @@ def build_parser() -> argparse.ArgumentParser:
     summarize.add_argument("--path", type=Path, default=Path("."), help="repo (default: .)")
     summarize.add_argument("--model", default=DEFAULT_MODEL, help="Ollama model tag")
     summarize.add_argument("--num-ctx", type=int, default=DEFAULT_NUM_CTX, help="context window")
+    plan = sub.add_parser("plan", help="write PLAN.md (needs no LLM)")
+    plan.add_argument("--path", type=Path, default=Path("."), help="repo (default: .)")
+    plan.add_argument("--provider", default="aws", choices=["aws"], help="target cloud")
+    plan.add_argument("--region", default=Prefs().region, help="cloud region")
+    plan.add_argument("--env", default="prod", choices=["prod", "nonprod"], help="environment")
     return parser
 
 
@@ -154,6 +162,43 @@ def run_summarize(repo: Path, model: str, num_ctx: int) -> int:
     return 0
 
 
+def load_summaries(path: Path) -> Summaries | None:
+    if not path.is_file():
+        return None
+    try:
+        return Summaries.model_validate_json(path.read_text(encoding="utf-8"))
+    except ValueError as error:
+        print(f"note: ignoring unreadable {path.name}: {str(error)[:120]}", file=sys.stderr)
+        return None
+
+
+def run_plan(repo: Path, prefs: Prefs) -> int:
+    repo = repo.resolve()
+    out_dir = repo / OUTPUT_DIR
+    cache = HashCache(out_dir / "cache.sqlite")
+    try:
+        inventory, _ = scan_repo(repo, cache)
+        system, _ = extract_system(repo, inventory, detect_services(repo, inventory), cache)
+    finally:
+        cache.close()
+    provider = get_provider(prefs.provider)
+    arch = provider.choose(system, prefs)
+    steps = provider.steps(arch)
+    summaries = load_summaries(out_dir / "summaries.json")
+    stamp = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    plan = render_plan(system, arch, steps, prefs, summaries, stamp)
+    (out_dir / "out").mkdir(parents=True, exist_ok=True)
+    (out_dir / "architecture.json").write_text(
+        arch.model_dump_json(indent=2) + "\n", encoding="utf-8"
+    )
+    (out_dir / "out" / "PLAN.md").write_text(plan, encoding="utf-8")
+    print(f"wrote {out_dir / 'out' / 'PLAN.md'}")
+    print(f"{len(arch.components)} components, {len(steps)} steps, {len(arch.unknowns)} unknowns")
+    if summaries is None:
+        print("note: no summaries.json; run `prodpath summarize` to add service purposes")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.WARNING)
@@ -161,6 +206,9 @@ def main(argv: list[str] | None = None) -> int:
         return run_scan(args.path)
     if args.command == "facts":
         return run_facts(args.path, args.service)
+    if args.command == "plan":
+        prefs = Prefs(provider=args.provider, region=args.region, environment=args.env)
+        return run_plan(args.path, prefs)
     if args.command == "summarize":
         return run_summarize(args.path, args.model, args.num_ctx)
     if args.command == "doctor":
