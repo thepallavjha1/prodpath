@@ -14,6 +14,9 @@ class HashCache:
             "path TEXT PRIMARY KEY, mtime_ns INTEGER, size INTEGER, hash TEXT)"
         )
         self._db.execute(
+            "CREATE TABLE IF NOT EXISTS llm_cache (key TEXT PRIMARY KEY, response TEXT)"
+        )
+        self._db.execute(
             "CREATE TABLE IF NOT EXISTS file_facts ("
             "path TEXT, hash TEXT, extractor_version TEXT, facts_json TEXT, "
             "PRIMARY KEY (path, hash, extractor_version))"
@@ -44,6 +47,13 @@ class HashCache:
             "INSERT OR REPLACE INTO file_facts VALUES (?, ?, ?, ?)",
             (path, digest, version, facts_json),
         )
+
+    def get_llm(self, key: str) -> str | None:
+        row = self._db.execute("SELECT response FROM llm_cache WHERE key=?", (key,)).fetchone()
+        return None if row is None else str(row[0])
+
+    def put_llm(self, key: str, response: str) -> None:
+        self._db.execute("INSERT OR REPLACE INTO llm_cache VALUES (?, ?)", (key, response))
 
     def close(self) -> None:
         self._db.commit()

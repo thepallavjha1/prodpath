@@ -6,9 +6,18 @@ from pathlib import Path
 from prodpath import __version__
 from prodpath.cache import HashCache
 from prodpath.detect import detect_services
+from prodpath.doctor import format_checks, run_doctor
 from prodpath.extract import extract_system
-from prodpath.models import Inventory, ServiceCandidate, SystemModel
+from prodpath.llm import (
+    DEFAULT_MAX_INPUT_TOKENS,
+    DEFAULT_MODEL,
+    DEFAULT_NUM_CTX,
+    LLMError,
+    OllamaLLM,
+)
+from prodpath.models import Inventory, ServiceCandidate, Summaries, SystemModel
 from prodpath.scan import scan_repo
+from prodpath.summarize import summarize_system
 
 OUTPUT_DIR = ".prodpath"
 
@@ -21,12 +30,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version=f"prodpath {__version__}")
     parser.add_argument("-v", "--verbose", action="store_true", help="debug logging")
     sub = parser.add_subparsers(dest="command", required=True)
-    sub.add_parser("doctor", help="check Ollama, model, GPU/VRAM, terraform (stub in phase 0)")
+    doctor = sub.add_parser("doctor", help="check Ollama, model, GPU/VRAM, terraform")
+    doctor.add_argument("--model", default=DEFAULT_MODEL, help="Ollama model tag to check")
     scan = sub.add_parser("scan", help="scan the repo and list detected services")
     scan.add_argument("--path", type=Path, default=Path("."), help="repo to scan (default: .)")
     facts = sub.add_parser("facts", help="extract evidence-backed facts per service")
     facts.add_argument("--path", type=Path, default=Path("."), help="repo to analyze (default: .)")
     facts.add_argument("--service", help="only show this service id")
+    summarize = sub.add_parser("summarize", help="local-LLM summaries (needs Ollama running)")
+    summarize.add_argument("--path", type=Path, default=Path("."), help="repo (default: .)")
+    summarize.add_argument("--model", default=DEFAULT_MODEL, help="Ollama model tag")
+    summarize.add_argument("--num-ctx", type=int, default=DEFAULT_NUM_CTX, help="context window")
     return parser
 
 
@@ -99,6 +113,47 @@ def run_facts(repo: Path, only_service: str | None) -> int:
     return 0
 
 
+def format_summaries(summaries: Summaries) -> str:
+    out = []
+    for item in summaries.services:
+        out.append(f"{item.service_id} ({item.role}) [{item.generated_by}]: {item.purpose}")
+        for risk in item.risks:
+            out.append(f"  risk: {risk.text}  <- {', '.join(risk.evidence_ids)}")
+        if item.hot_path:
+            out.append(
+                f"  hot path: {item.hot_path.text}  <- {', '.join(item.hot_path.evidence_ids)}"
+            )
+        if item.dropped_claims:
+            out.append(f"  ({item.dropped_claims} claims dropped: no valid evidence)")
+    system = summaries.system
+    out.append(f"\nOverview: {system.overview}")
+    for key_risk in system.key_risks:
+        out.append(f"  key risk: {key_risk.text}  [{', '.join(key_risk.service_ids)}]")
+    if system.omitted_services:
+        out.append(f"  ({system.omitted_services} services omitted from the overview: too large)")
+    return "\n".join(out)
+
+
+def run_summarize(repo: Path, model: str, num_ctx: int) -> int:
+    repo = repo.resolve()
+    cache = HashCache(repo / OUTPUT_DIR / "cache.sqlite")
+    try:
+        inventory, _ = scan_repo(repo, cache)
+        system, _ = extract_system(repo, inventory, detect_services(repo, inventory), cache)
+        llm = OllamaLLM(model=model, num_ctx=num_ctx, cache=cache)
+        try:
+            summaries = summarize_system(llm, system, model, DEFAULT_MAX_INPUT_TOKENS)
+        except LLMError as error:
+            print(f"error: {error}", file=sys.stderr)
+            return 1
+    finally:
+        cache.close()
+    target = repo / OUTPUT_DIR / "summaries.json"
+    target.write_text(summaries.model_dump_json(indent=2) + "\n", encoding="utf-8")
+    print(format_summaries(summaries))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.WARNING)
@@ -106,9 +161,12 @@ def main(argv: list[str] | None = None) -> int:
         return run_scan(args.path)
     if args.command == "facts":
         return run_facts(args.path, args.service)
+    if args.command == "summarize":
+        return run_summarize(args.path, args.model, args.num_ctx)
     if args.command == "doctor":
-        print("doctor: not implemented yet (phase 3). Nothing was checked.")
-        return 0
+        checks = run_doctor(args.model)
+        print(format_checks(checks))
+        return 1 if any(c.status == "fail" for c in checks) else 0
     return 2  # unreachable: argparse enforces a known command
 
 

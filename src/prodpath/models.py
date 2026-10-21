@@ -152,3 +152,38 @@ class ServiceCandidate(BaseModel):
         if not value:
             raise ValueError("a ServiceCandidate needs at least one Evidence")
         return value
+
+
+class Claim(BaseModel):
+    text: str = Field(max_length=200)
+    # The model cites ids like "F3" from its prompt; code drops unknown ids and replaces the
+    # rest with "path:line" references, so stored summaries point at real evidence.
+    evidence_ids: list[str]
+
+
+class ServiceSummary(BaseModel):
+    service_id: str  # forced to the input id by code
+    purpose: str = Field(max_length=200)
+    role: Literal["web", "worker", "cron", "static", "lib", "unknown"]
+    risks: list[Claim] = []
+    hot_path: Claim | None = None
+    generated_by: Literal["llm", "rule"] = "llm"  # set by code
+    dropped_claims: int = 0  # set by code: claims removed for missing/unknown evidence ids
+
+
+class SystemClaim(BaseModel):
+    text: str = Field(max_length=300)
+    service_ids: list[str]  # must exist in the input
+
+
+class SystemSummary(BaseModel):
+    overview: str = Field(max_length=600)
+    key_risks: list[SystemClaim] = []
+    omitted_services: int = 0  # set by code when the reduce input was trimmed to budget
+
+
+class Summaries(BaseModel):  # .prodpath/summaries.json
+    schema_version: int = SCHEMA_VERSION
+    model: str
+    services: list[ServiceSummary]
+    system: SystemSummary

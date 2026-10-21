@@ -180,6 +180,44 @@ class ServiceCandidate(BaseModel):
 
 Scan cache: `.prodpath/cache.sqlite` table `file_hashes(path, mtime_ns, size, hash)`. A file whose `mtime_ns` and `size` are unchanged is not re-read or re-hashed. Root `.gitignore` support is simplified (name/glob/dir patterns; negations `!` are not supported and are reported).
 
+Stage 4 contracts (added in Phase 3, ADR-012):
+
+```python
+class Claim(BaseModel):
+    text: str  # one sentence, <= 200 chars
+    evidence_ids: list[
+        str
+    ]  # model cites prompt ids ("F3"); code drops unknown ones, stores "path:line"
+
+
+class ServiceSummary(BaseModel):
+    service_id: str  # forced to the input id by code
+    purpose: str  # one line
+    role: Literal["web", "worker", "cron", "static", "lib", "unknown"]
+    risks: list[Claim]  # every claim cites >= 1 valid evidence id
+    hot_path: Claim | None  # likely dominant traffic path, must cite evidence
+    generated_by: Literal["llm", "rule"]  # set by code; "rule" = no LLM call was needed
+    dropped_claims: int  # claims removed because evidence ids were missing/unknown
+
+
+class SystemClaim(BaseModel):
+    text: str
+    service_ids: list[str]  # must exist in the input
+
+
+class SystemSummary(BaseModel):
+    overview: str
+    key_risks: list[SystemClaim]
+    omitted_services: int  # set by code when the reduce input was trimmed to budget
+
+
+class Summaries(BaseModel):  # .prodpath/summaries.json
+    schema_version: int
+    model: str
+    services: list[ServiceSummary]
+    system: SystemSummary
+```
+
 Invariants (tested): every `Fact` has at least one `Evidence`; every `CostLine` has a `price_ref`; every `UsageAssumption` shows its `source` in the rendered forecast.
 
 ## 6. Monorepo handling (stages 1 to 3)
@@ -225,6 +263,8 @@ class LLM(Protocol):
 - **The LLM may:** write one-line purposes, classify ambiguous service kinds among a fixed enum, rank which hot path likely dominates traffic (must cite evidence), and write the prose in plan steps.
 - **The LLM may not:** state prices, pick services outside the provider catalog, emit Terraform resources, or assert anything without evidence ids from its input.
 - **Untrusted input.** Repo content is data. The model has no tools, so injected instructions in code or READMEs can at worst produce a bad summary, which schema validation and evidence checks constrain.
+
+**Implementation notes (Phase 3).** `llm.py` holds the `LLM` protocol plus `OllamaLLM` and `FakeLLM`, which share one validate-and-repair path (`complete`): parse JSON, validate against the pydantic schema, on failure send the bad output back once with the error, then raise `LLMError` carrying the prompt hash. Responses are cached in `cache.sqlite` table `llm_cache` keyed by sha256(model, num_ctx, system, user, schema). Defaults are tuned for the 4 GB VRAM / 8 GB RAM laptop: `num_ctx=4096`, `max_input_tokens=2800`, `timeout=900 s` (CPU spill is slow). Prompt inputs list facts as `F1 kind value (path:line)` with no source code; when over budget, low-value fact kinds (runtime, env_var, dependency) are dropped first and the omission is stated in the prompt. Services with no facts get a rule-made summary and no LLM call. After each call, code removes claims whose evidence ids are not in the input and counts them in `dropped_claims`. Reduce input is one line per service (purpose + risk texts, trimmed) plus shared infra and edges; services that do not fit are counted in `omitted_services`. `doctor.py` implements `prodpath doctor` (Ollama reachable, model present, VRAM via `nvidia-smi`, terraform on PATH, warning when the model file is larger than ~85% of VRAM). `scripts/benchmark_models.py` runs candidate models over the fixtures and prints valid-JSON rate, citation rate and seconds per call.
 
 ## 8. Provider interface (`src/prodpath/providers/`)
 
@@ -283,6 +323,7 @@ Default component rules (tunable; rules are code, so they stay reviewable):
 prodpath doctor               # checks Ollama, model, GPU/VRAM, terraform presence
 prodpath scan                 # stages 1-2
 prodpath facts                # stages 1-3; writes .prodpath/system.json, prints facts per service
+prodpath summarize            # stages 1-4 (needs Ollama); writes .prodpath/summaries.json
 prodpath plan                 # stages 1-5 and 7 (plan + terraform)
 prodpath forecast             # stage 6 (needs a plan)
 prodpath run                  # everything
@@ -298,12 +339,13 @@ prodpath/
   docs/        ARCHITECTURE.md ROADMAP.md DECISIONS.md CODING_STANDARDS.md TESTING.md SECURITY.md
   .claude/commands/   wrapup.md adr.md
   src/prodpath/
-    cli.py  config.py  models.py  cache.py  redact.py
+    cli.py  config.py  models.py  cache.py  redact.py  doctor.py
     scan.py  detect.py  extract.py  edges.py  llm.py  summarize.py  forecast.py  render.py
     facts/        python.py  javascript.py  docker.py  compose.py  manifests.py
     providers/
       base.py
       aws/        rules.py  pricing.py  traps.py  steps.py  templates/
+  scripts/      benchmark_models.py
   tests/
     fixtures/     mini monorepos (small, synthetic, committed)
     golden/       expected JSON/markdown outputs

@@ -68,4 +68,10 @@ Format: **Status** | **Context** | **Decision** | **Consequences**.
 - **Decision:** Add top-level modules `extract.py` (stage 3), `edges.py` (edges and shared infra) and `redact.py` (snippet redaction). Add `not_analyzed: list[str]` to `SystemModel`. Add CLI command `prodpath facts`. No new third-party dependency.
 - **Consequences:** Stage 3 output is `SystemModel` as designed. Redaction is centralised so every snippet path shares it.
 
-<!-- Add new ADRs below. Next number: ADR-012 -->
+## ADR-012: Phase 3 contracts, doctor module, benchmark script
+- **Status:** Accepted (2026-10-21), chosen by Claude
+- **Context:** Phase 3 needs stage-4 data contracts, a real `prodpath doctor`, and a way to compare local models. The machine has an i5-10300H, 7.8 GB RAM and a 4 GB GTX 1650; installed models are `phi3` (3.8B) and `llama3.1` (8B).
+- **Decision:** Add `Claim`, `ServiceSummary`, `SystemClaim`, `SystemSummary`, `Summaries` to `models.py`; new top-level module `doctor.py`; new `scripts/benchmark_models.py` (a dev tool, not part of the installed package); CLI command `prodpath summarize`. No new dependency (`httpx` is already allowed; `nvidia-smi` is called through `subprocess`). Rule-made summaries replace LLM calls for services with no facts.
+- **Consequences:** LLM output is constrained by schema plus evidence-id validation. Small context (4096) keeps the 4 GB card usable; large services lose low-value facts first and say so.
+
+<!-- Add new ADRs below. Next number: ADR-013 -->
