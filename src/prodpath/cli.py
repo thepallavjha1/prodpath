@@ -6,7 +6,8 @@ from pathlib import Path
 from prodpath import __version__
 from prodpath.cache import HashCache
 from prodpath.detect import detect_services
-from prodpath.models import Inventory, ServiceCandidate
+from prodpath.extract import extract_system
+from prodpath.models import Inventory, ServiceCandidate, SystemModel
 from prodpath.scan import scan_repo
 
 OUTPUT_DIR = ".prodpath"
@@ -23,6 +24,9 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("doctor", help="check Ollama, model, GPU/VRAM, terraform (stub in phase 0)")
     scan = sub.add_parser("scan", help="scan the repo and list detected services")
     scan.add_argument("--path", type=Path, default=Path("."), help="repo to scan (default: .)")
+    facts = sub.add_parser("facts", help="extract evidence-backed facts per service")
+    facts.add_argument("--path", type=Path, default=Path("."), help="repo to analyze (default: .)")
+    facts.add_argument("--service", help="only show this service id")
     return parser
 
 
@@ -60,11 +64,48 @@ def run_scan(repo: Path) -> int:
     return 0
 
 
+def format_system(system: SystemModel, only_service: str | None = None) -> str:
+    out: list[str] = []
+    for service in system.services:
+        if only_service and service.id != only_service:
+            continue
+        out.append(f"{service.id} ({service.kind}) root={service.root}")
+        for fact in service.facts:
+            ev = fact.evidence[0]
+            where = f"{ev.path}:{ev.line}" if ev.line else ev.path
+            mark = "" if fact.certainty == "parsed" else " [heuristic]"
+            out.append(f"  {fact.kind:<15} {fact.value}  <- {where}{mark}")
+    if not only_service:
+        for edge in system.edges:
+            out.append(f"edge: {edge.src} -> {edge.dst} via {edge.via}")
+        for note in system.not_analyzed:
+            out.append(f"not analyzed: {note}")
+    return "\n".join(out)
+
+
+def run_facts(repo: Path, only_service: str | None) -> int:
+    repo = repo.resolve()
+    cache = HashCache(repo / OUTPUT_DIR / "cache.sqlite")
+    try:
+        inventory, _ = scan_repo(repo, cache)
+        candidates = detect_services(repo, inventory)
+        system, stats = extract_system(repo, inventory, candidates, cache)
+    finally:
+        cache.close()
+    target = repo / OUTPUT_DIR / "system.json"
+    target.write_text(system.model_dump_json(indent=2) + "\n", encoding="utf-8")
+    print(format_system(system, only_service))
+    print(f"\n{stats.extracted} files extracted, {stats.cached} from cache")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.WARNING)
     if args.command == "scan":
         return run_scan(args.path)
+    if args.command == "facts":
+        return run_facts(args.path, args.service)
     if args.command == "doctor":
         print("doctor: not implemented yet (phase 3). Nothing was checked.")
         return 0

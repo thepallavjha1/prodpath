@@ -29,5 +29,6 @@ def test_fixtures_contain_no_real_secret_shapes(fixtures_dir: Path) -> None:
     for path in fixtures_dir.rglob("*"):
         if path.is_file():
             text = path.read_text(errors="replace")
-            assert "AKIA" not in text, path
+            # One documented fake key is allowed (TESTING.md section 4, invariant 2).
+            assert "AKIA" not in text.replace("AKIAIOSFODNN7EXAMPLE", ""), path
             assert "BEGIN PRIVATE KEY" not in text, path

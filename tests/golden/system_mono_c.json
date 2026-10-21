@@ -1,0 +1,480 @@
+{
+  "schema_version": 1,
+  "services": [
+    {
+      "id": "apps-billing",
+      "root": "apps/billing",
+      "kind": "web",
+      "facts": [
+        {
+          "kind": "datastore",
+          "value": "postgres",
+          "evidence": [
+            {
+              "path": "apps/billing/requirements.txt",
+              "line": 2,
+              "snippet": "psycopg2-binary"
+            }
+          ],
+          "certainty": "parsed"
+        },
+        {
+          "kind": "env_var",
+          "value": "DATABASE_URL",
+          "evidence": [
+            {
+              "path": "apps/billing/app.py",
+              "line": 6,
+              "snippet": "os.environ[\"DATABASE_URL\"]"
+            }
+          ],
+          "certainty": "parsed"
+        },
+        {
+          "kind": "framework",
+          "value": "flask",
+          "evidence": [
+            {
+              "path": "apps/billing/app.py",
+              "line": 3,
+              "snippet": "from flask import Flask"
+            },
+            {
+              "path": "apps/billing/requirements.txt",
+              "line": 1,
+              "snippet": "flask"
+            }
+          ],
+          "certainty": "parsed"
+        },
+        {
+          "kind": "port",
+          "value": "8000",
+          "evidence": [
+            {
+              "path": "apps/billing/Dockerfile",
+              "line": 3,
+              "snippet": "EXPOSE 8000"
+            }
+          ],
+          "certainty": "parsed"
+        },
+        {
+          "kind": "runtime",
+          "value": "python:3.12-slim",
+          "evidence": [
+            {
+              "path": "apps/billing/Dockerfile",
+              "line": 1,
+              "snippet": "FROM python:3.12-slim"
+            }
+          ],
+          "certainty": "parsed"
+        }
+      ]
+    },
+    {
+      "id": "apps-gateway",
+      "root": "apps/gateway",
+      "kind": "web",
+      "facts": [
+        {
+          "kind": "env_var",
+          "value": "BILLING_URL",
+          "evidence": [
+            {
+              "path": "apps/gateway/server.js",
+              "line": 5,
+              "snippet": "process.env.BILLING_URL"
+            }
+          ],
+          "certainty": "parsed"
+        },
+        {
+          "kind": "env_var",
+          "value": "PORT",
+          "evidence": [
+            {
+              "path": "apps/gateway/server.js",
+              "line": 4,
+              "snippet": "process.env.PORT"
+            }
+          ],
+          "certainty": "parsed"
+        },
+        {
+          "kind": "env_var",
+          "value": "USERS_URL",
+          "evidence": [
+            {
+              "path": "apps/gateway/server.js",
+              "line": 6,
+              "snippet": "process.env[\"USERS_URL\"]"
+            }
+          ],
+          "certainty": "parsed"
+        },
+        {
+          "kind": "framework",
+          "value": "express",
+          "evidence": [
+            {
+              "path": "apps/gateway/package.json",
+              "line": 1,
+              "snippet": "{\"name\": \"gateway\", \"dependencies\": {\"express\": \"^4\"}}"
+            },
+            {
+              "path": "apps/gateway/server.js",
+              "line": 1,
+              "snippet": "const express = require(\"express\");"
+            }
+          ],
+          "certainty": "parsed"
+        },
+        {
+          "kind": "health_endpoint",
+          "value": "/health",
+          "evidence": [
+            {
+              "path": "apps/gateway/server.js",
+              "line": 3,
+              "snippet": "app.get(\"/health\")"
+            }
+          ],
+          "certainty": "parsed"
+        },
+        {
+          "kind": "port",
+          "value": "3000",
+          "evidence": [
+            {
+              "path": "apps/gateway/Dockerfile",
+              "line": 3,
+              "snippet": "EXPOSE 3000"
+            },
+            {
+              "path": "apps/gateway/server.js",
+              "line": 4,
+              "snippet": "app.listen(3000)"
+            }
+          ],
+          "certainty": "parsed"
+        },
+        {
+          "kind": "runtime",
+          "value": "node:20-slim",
+          "evidence": [
+            {
+              "path": "apps/gateway/Dockerfile",
+              "line": 1,
+              "snippet": "FROM node:20-slim"
+            }
+          ],
+          "certainty": "parsed"
+        }
+      ]
+    },
+    {
+      "id": "apps-notifier",
+      "root": "apps/notifier",
+      "kind": "web",
+      "facts": [
+        {
+          "kind": "env_var",
+          "value": "PORT",
+          "evidence": [
+            {
+              "path": "apps/notifier/server.js",
+              "line": 4,
+              "snippet": "process.env.PORT"
+            }
+          ],
+          "certainty": "parsed"
+        },
+        {
+          "kind": "framework",
+          "value": "express",
+          "evidence": [
+            {
+              "path": "apps/notifier/package.json",
+              "line": 1,
+              "snippet": "{\"name\": \"notifier\", \"dependencies\": {\"express\": \"^4\"}}"
+            },
+            {
+              "path": "apps/notifier/server.js",
+              "line": 1,
+              "snippet": "const express = require(\"express\");"
+            }
+          ],
+          "certainty": "parsed"
+        },
+        {
+          "kind": "health_endpoint",
+          "value": "/health",
+          "evidence": [
+            {
+              "path": "apps/notifier/server.js",
+              "line": 3,
+              "snippet": "app.get(\"/health\")"
+            }
+          ],
+          "certainty": "parsed"
+        },
+        {
+          "kind": "port",
+          "value": "3000",
+          "evidence": [
+            {
+              "path": "apps/notifier/Dockerfile",
+              "line": 3,
+              "snippet": "EXPOSE 3000"
+            },
+            {
+              "path": "apps/notifier/server.js",
+              "line": 4,
+              "snippet": "app.listen(3000)"
+            }
+          ],
+          "certainty": "parsed"
+        },
+        {
+          "kind": "runtime",
+          "value": "node:20-slim",
+          "evidence": [
+            {
+              "path": "apps/notifier/Dockerfile",
+              "line": 1,
+              "snippet": "FROM node:20-slim"
+            }
+          ],
+          "certainty": "parsed"
+        }
+      ]
+    },
+    {
+      "id": "apps-reports",
+      "root": "apps/reports",
+      "kind": "cron",
+      "facts": [
+        {
+          "kind": "local_state",
+          "value": "/tmp/report.csv",
+          "evidence": [
+            {
+              "path": "apps/reports/job.py",
+              "line": 4,
+              "snippet": "open(..., \"w\")"
+            }
+          ],
+          "certainty": "heuristic"
+        },
+        {
+          "kind": "runtime",
+          "value": "python:3.12-slim",
+          "evidence": [
+            {
+              "path": "apps/reports/Dockerfile",
+              "line": 1,
+              "snippet": "FROM python:3.12-slim"
+            }
+          ],
+          "certainty": "parsed"
+        }
+      ]
+    },
+    {
+      "id": "apps-users",
+      "root": "apps/users",
+      "kind": "web",
+      "facts": [
+        {
+          "kind": "cache",
+          "value": "redis",
+          "evidence": [
+            {
+              "path": "apps/users/app.py",
+              "line": 1,
+              "snippet": "import redis"
+            },
+            {
+              "path": "apps/users/requirements.txt",
+              "line": 2,
+              "snippet": "redis"
+            }
+          ],
+          "certainty": "parsed"
+        },
+        {
+          "kind": "framework",
+          "value": "flask",
+          "evidence": [
+            {
+              "path": "apps/users/app.py",
+              "line": 2,
+              "snippet": "from flask import Flask"
+            },
+            {
+              "path": "apps/users/requirements.txt",
+              "line": 1,
+              "snippet": "flask"
+            }
+          ],
+          "certainty": "parsed"
+        },
+        {
+          "kind": "port",
+          "value": "8000",
+          "evidence": [
+            {
+              "path": "apps/users/Dockerfile",
+              "line": 3,
+              "snippet": "EXPOSE 8000"
+            }
+          ],
+          "certainty": "parsed"
+        },
+        {
+          "kind": "runtime",
+          "value": "python:3.12-slim",
+          "evidence": [
+            {
+              "path": "apps/users/Dockerfile",
+              "line": 1,
+              "snippet": "FROM python:3.12-slim"
+            }
+          ],
+          "certainty": "parsed"
+        }
+      ]
+    },
+    {
+      "id": "apps-web",
+      "root": "apps/web",
+      "kind": "web",
+      "facts": [
+        {
+          "kind": "env_var",
+          "value": "PORT",
+          "evidence": [
+            {
+              "path": "apps/web/server.js",
+              "line": 4,
+              "snippet": "process.env.PORT"
+            }
+          ],
+          "certainty": "parsed"
+        },
+        {
+          "kind": "framework",
+          "value": "express",
+          "evidence": [
+            {
+              "path": "apps/web/package.json",
+              "line": 1,
+              "snippet": "{\"name\": \"web\", \"dependencies\": {\"express\": \"^4\"}}"
+            },
+            {
+              "path": "apps/web/server.js",
+              "line": 1,
+              "snippet": "const express = require(\"express\");"
+            }
+          ],
+          "certainty": "parsed"
+        },
+        {
+          "kind": "health_endpoint",
+          "value": "/health",
+          "evidence": [
+            {
+              "path": "apps/web/server.js",
+              "line": 3,
+              "snippet": "app.get(\"/health\")"
+            }
+          ],
+          "certainty": "parsed"
+        },
+        {
+          "kind": "local_state",
+          "value": "<file write>",
+          "evidence": [
+            {
+              "path": "apps/web/server.js",
+              "line": 6,
+              "snippet": "fs.writeFileSync(...)"
+            }
+          ],
+          "certainty": "heuristic"
+        },
+        {
+          "kind": "port",
+          "value": "3000",
+          "evidence": [
+            {
+              "path": "apps/web/Dockerfile",
+              "line": 3,
+              "snippet": "EXPOSE 3000"
+            },
+            {
+              "path": "apps/web/server.js",
+              "line": 4,
+              "snippet": "app.listen(3000)"
+            }
+          ],
+          "certainty": "parsed"
+        },
+        {
+          "kind": "runtime",
+          "value": "node:20-slim",
+          "evidence": [
+            {
+              "path": "apps/web/Dockerfile",
+              "line": 1,
+              "snippet": "FROM node:20-slim"
+            }
+          ],
+          "certainty": "parsed"
+        }
+      ]
+    },
+    {
+      "id": "packages-py-common",
+      "root": "packages/py-common",
+      "kind": "lib",
+      "facts": []
+    },
+    {
+      "id": "packages-shared-utils",
+      "root": "packages/shared-utils",
+      "kind": "lib",
+      "facts": []
+    }
+  ],
+  "edges": [
+    {
+      "src": "apps-gateway",
+      "dst": "apps-billing",
+      "via": "http",
+      "evidence": [
+        {
+          "path": "apps/gateway/server.js",
+          "line": 5,
+          "snippet": "process.env.BILLING_URL"
+        }
+      ]
+    },
+    {
+      "src": "apps-gateway",
+      "dst": "apps-users",
+      "via": "http",
+      "evidence": [
+        {
+          "path": "apps/gateway/server.js",
+          "line": 6,
+          "snippet": "process.env[\"USERS_URL\"]"
+        }
+      ]
+    }
+  ],
+  "shared_infra": [],
+  "not_analyzed": []
+}

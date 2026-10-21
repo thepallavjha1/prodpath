@@ -30,10 +30,10 @@ Do not start the next phase "while you're here". If a task belongs to a later ph
 
 **Goal:** every service gets evidence-backed facts.
 
-- [ ] `facts/python.py` (ast), `facts/docker.py`, `facts/compose.py`, `facts/manifests.py`
-- [ ] `facts/javascript.py` via tree-sitter
-- [ ] Edges between services (http calls by env var URLs, queues, shared DBs)
-- [ ] Invariant test: no fact without evidence; no secret value in any snippet
+- [x] `facts/python.py` (ast), `facts/docker.py`, `facts/compose.py`, `facts/manifests.py`
+- [x] `facts/javascript.py` via tree-sitter
+- [x] Edges between services (http calls by env var URLs, queues, shared DBs)
+- [x] Invariant test: no fact without evidence; no secret value in any snippet
 
 **Exit:** facts on the fixtures match goldens; on the real monorepo, a spot check of 10 random facts finds none without correct evidence.
 

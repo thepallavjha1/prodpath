@@ -15,9 +15,10 @@ Keep it short, factual and current. History goes in the changelog; design lives 
 
 ## Current state
 
-- Phase: **1 (scan and service detection) implemented; waiting on the real-monorepo check** (the only unmet exit criterion).
-- Works: `prodpath scan [--path]` prints the service table and writes `.prodpath/inventory.json` and `cache.sqlite`; `scan.py` (ignores, blake2b, mtime+size cache), `detect.py` (rules in ARCHITECTURE section 6), `cache.py`; golden tests for mono_a/b/c; second run re-hashes nothing (tested). 32 tests, ruff, mypy --strict all green.
-- Next action: user runs `prodpath scan --path <real monorepo>` and reports missed or wrong services; each miss becomes a fixture and a test. Then Phase 2 (fact extraction) on the user's go-ahead.
+- Phase: **2 (fact extraction) implemented; Phase 1 and 2 both wait on the real-monorepo check** (the only unmet exit criteria).
+- Works: `prodpath scan` and `prodpath facts [--path] [--service]` (writes `.prodpath/system.json`); extractors in `src/prodpath/facts/` (python ast, javascript tree-sitter, docker, compose, manifests/env), `extract.py` (stage 3 with per-file facts cache), `edges.py` (http and shared-infra edges), `redact.py`. Goldens for detect and system output on mono_a/b/c; secret-leak invariants with fake secrets (`hunter2`, `AKIAIOSFODNN7EXAMPLE`). 70 tests, ruff, mypy --strict green.
+- Code is published at https://github.com/thepallavjha1/prodpath (public, branch main). Commit and push after each task.
+- Next action: user runs `prodpath scan` and `prodpath facts` on the real monorepo, reports wrong services and spot-checks 10 facts; each miss becomes a fixture and a test. Then Phase 3 (local LLM) on the user's go-ahead.
 
 ## Decisions (short form; details in docs/DECISIONS.md)
 
@@ -49,10 +50,13 @@ Keep it short, factual and current. History goes in the changelog; design lives 
 - Heredocs with quotes/escapes broke in the Bash tool; write files with the Write tool.
 - Environment tools present: uv 0.12.5, Python 3.12.3, Terraform 1.16.4, Ollama 0.40.6.
 - `uv sync` run before `src/prodpath/` existed does not install the project; rerun `uv sync --reinstall-package prodpath` if `import prodpath` fails.
+- Unknown packages produce no fact (only the KNOWN_PACKAGES table in facts/manifests.py); extend it when the real monorepo shows misses. Bump EXTRACTOR_VERSION in extract.py whenever an extractor changes.
+- Shared infra is only detected through compose image-only services; two services both using psycopg2 are not assumed to share a database.
 - Build backend is hatchling (needed so `prodpath` is installable as a console script).
 
 ## Changelog
 
+- 2026-10-21 | phase-2 | Added facts/* extractors, extract.py, edges.py, redact.py, `prodpath facts`, SystemModel.not_analyzed, goldens and invariants (ADR-011) | Phase 2 roadmap | src/prodpath/*, tests/*, docs/*
 - 2026-10-21 | phase-1 | Added scan.py, detect.py, cache.py, `prodpath scan`, FileEntry/Inventory/ServiceCandidate models, golden + rule + cache tests; added pyyaml (ADR-010) | Phase 1 roadmap | src/prodpath/{scan,detect,cache,cli,models}.py, tests/*, docs/*
 - 2026-10-21 | phase-0 | Bootstrapped uv project, models.py contracts, CLI stub, 3 fixtures, socket guard, tests; recorded real GPU specs | Phase 0 roadmap | pyproject.toml, src/prodpath/*, tests/*, docs/ARCHITECTURE.md, docs/ROADMAP.md
 - 2026-10-21 | phase-0 | Created documentation set (CLAUDE.md, MEMORY.md, ARCHITECTURE, ROADMAP, DECISIONS, CODING_STANDARDS, TESTING, SECURITY) | Project kickoff after design discussion | all docs

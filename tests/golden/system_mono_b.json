@@ -1,0 +1,239 @@
+{
+  "schema_version": 1,
+  "services": [
+    {
+      "id": "api",
+      "root": "api",
+      "kind": "web",
+      "facts": [
+        {
+          "kind": "cache",
+          "value": "redis",
+          "evidence": [
+            {
+              "path": "api/requirements.txt",
+              "line": 3,
+              "snippet": "celery[redis]"
+            },
+            {
+              "path": "docker-compose.yml",
+              "line": 6,
+              "snippet": "redis: image redis:7"
+            }
+          ],
+          "certainty": "parsed"
+        },
+        {
+          "kind": "env_var",
+          "value": "REDIS_URL",
+          "evidence": [
+            {
+              "path": "api/main.py",
+              "line": 7,
+              "snippet": "os.getenv(\"REDIS_URL\")"
+            },
+            {
+              "path": "docker-compose.yml",
+              "line": 6,
+              "snippet": "api: environment REDIS_URL"
+            }
+          ],
+          "certainty": "parsed"
+        },
+        {
+          "kind": "framework",
+          "value": "fastapi",
+          "evidence": [
+            {
+              "path": "api/main.py",
+              "line": 3,
+              "snippet": "from fastapi import FastAPI"
+            },
+            {
+              "path": "api/requirements.txt",
+              "line": 1,
+              "snippet": "fastapi"
+            }
+          ],
+          "certainty": "parsed"
+        },
+        {
+          "kind": "port",
+          "value": "8000",
+          "evidence": [
+            {
+              "path": "api/Dockerfile",
+              "line": 4,
+              "snippet": "EXPOSE 8000"
+            },
+            {
+              "path": "docker-compose.yml",
+              "line": 4,
+              "snippet": "api: port 8000"
+            }
+          ],
+          "certainty": "parsed"
+        },
+        {
+          "kind": "runtime",
+          "value": "python:3.12-slim",
+          "evidence": [
+            {
+              "path": "api/Dockerfile",
+              "line": 1,
+              "snippet": "FROM python:3.12-slim"
+            }
+          ],
+          "certainty": "parsed"
+        },
+        {
+          "kind": "runtime",
+          "value": "uvicorn",
+          "evidence": [
+            {
+              "path": "api/requirements.txt",
+              "line": 2,
+              "snippet": "uvicorn"
+            }
+          ],
+          "certainty": "parsed"
+        },
+        {
+          "kind": "worker",
+          "value": "celery",
+          "evidence": [
+            {
+              "path": "api/requirements.txt",
+              "line": 3,
+              "snippet": "celery[redis]"
+            }
+          ],
+          "certainty": "parsed"
+        }
+      ]
+    },
+    {
+      "id": "worker",
+      "root": "worker",
+      "kind": "worker",
+      "facts": [
+        {
+          "kind": "cache",
+          "value": "redis",
+          "evidence": [
+            {
+              "path": "docker-compose.yml",
+              "line": 6,
+              "snippet": "redis: image redis:7"
+            },
+            {
+              "path": "worker/requirements.txt",
+              "line": 1,
+              "snippet": "celery[redis]"
+            }
+          ],
+          "certainty": "parsed"
+        },
+        {
+          "kind": "env_var",
+          "value": "REDIS_URL",
+          "evidence": [
+            {
+              "path": "docker-compose.yml",
+              "line": 6,
+              "snippet": "worker: environment REDIS_URL"
+            },
+            {
+              "path": "worker/tasks.py",
+              "line": 5,
+              "snippet": "os.environ[\"REDIS_URL\"]"
+            }
+          ],
+          "certainty": "parsed"
+        },
+        {
+          "kind": "runtime",
+          "value": "python:3.12-slim",
+          "evidence": [
+            {
+              "path": "worker/Dockerfile",
+              "line": 1,
+              "snippet": "FROM python:3.12-slim"
+            }
+          ],
+          "certainty": "parsed"
+        },
+        {
+          "kind": "worker",
+          "value": "celery",
+          "evidence": [
+            {
+              "path": "worker/requirements.txt",
+              "line": 1,
+              "snippet": "celery[redis]"
+            },
+            {
+              "path": "worker/tasks.py",
+              "line": 3,
+              "snippet": "from celery import Celery"
+            }
+          ],
+          "certainty": "parsed"
+        },
+        {
+          "kind": "worker",
+          "value": "celery task",
+          "evidence": [
+            {
+              "path": "worker/tasks.py",
+              "line": 8,
+              "snippet": "@app.task"
+            }
+          ],
+          "certainty": "parsed"
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "src": "api",
+      "dst": "infra:redis",
+      "via": "cache",
+      "evidence": [
+        {
+          "path": "docker-compose.yml",
+          "line": 6,
+          "snippet": "redis: image redis:7"
+        }
+      ]
+    },
+    {
+      "src": "worker",
+      "dst": "infra:redis",
+      "via": "cache",
+      "evidence": [
+        {
+          "path": "docker-compose.yml",
+          "line": 6,
+          "snippet": "redis: image redis:7"
+        }
+      ]
+    }
+  ],
+  "shared_infra": [
+    {
+      "kind": "cache",
+      "value": "redis",
+      "evidence": [
+        {
+          "path": "docker-compose.yml",
+          "line": 6,
+          "snippet": "redis: image redis:7"
+        }
+      ],
+      "certainty": "parsed"
+    }
+  ],
+  "not_analyzed": []
+}
