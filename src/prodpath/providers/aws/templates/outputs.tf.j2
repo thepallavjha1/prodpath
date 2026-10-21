@@ -1,0 +1,62 @@
+{% if services %}
+output "ecr_repository_urls" {
+  description = "Repository URL per service id; push images here."
+  value = {
+{% for s in services %}
+    "{{ s.id }}" = aws_ecr_repository.{{ s.tf }}.repository_url
+{% endfor %}
+  }
+}
+{% endif %}
+{% if has_alb %}
+
+output "alb_dns_name" {
+  description = "Point your DNS records (<service-id>.<domain_name>) at this name."
+  value       = aws_lb.main.dns_name
+}
+{% endif %}
+{% if has_github and services %}
+
+output "github_actions_role_arn" {
+  description = "Role for GitHub Actions to assume with OIDC (role-to-assume)."
+  value       = aws_iam_role.github_actions.arn
+}
+{% endif %}
+{% for s in services if s.secrets %}
+{% if loop.first %}
+
+output "secret_slots" {
+  description = "Secrets Manager slots created empty. Set each value yourself, out of band."
+  value = {
+{% endif %}
+    "{{ s.id }}" = [{% for secret in s.secrets %}aws_secretsmanager_secret.{{ secret.tf }}.name{{ ", " if not loop.last }}{% endfor %}]
+{% if loop.last %}
+  }
+}
+{% endif %}
+{% endfor %}
+{% if rds or redis %}
+
+output "data_store_endpoints" {
+  description = "Hostnames to put in your connection strings (stored in the secret slots, not here)."
+  value = {
+{% for db in rds %}
+    "{{ db.engine }}" = aws_db_instance.{{ db.tf }}.address
+{% endfor %}
+{% if redis %}
+    "redis" = aws_elasticache_replication_group.redis.primary_endpoint_address
+{% endif %}
+  }
+}
+{% endif %}
+{% if rds %}
+
+output "rds_master_secret_arns" {
+  description = "AWS-managed secrets holding each database's master credentials."
+  value = {
+{% for db in rds %}
+    "{{ db.engine }}" = aws_db_instance.{{ db.tf }}.master_user_secret[0].secret_arn
+{% endfor %}
+  }
+}
+{% endif %}

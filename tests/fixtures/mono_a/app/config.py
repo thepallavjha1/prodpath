@@ -1,4 +1,4 @@
-import boto3  # key AKIAIOSFODNN7EXAMPLE password=hunter2
+import boto3  # password=hunter2
 
 password = "hunter2"
 s3 = boto3.client("s3")

@@ -1,0 +1,49 @@
+{% if rds %}
+resource "aws_db_subnet_group" "main" {
+  name       = local.name
+  subnet_ids = aws_subnet.private[*].id
+}
+{% for db in rds %}
+
+resource "aws_security_group" "rds_{{ db.tf }}" {
+  name        = "${local.name}-rds-{{ db.engine }}"
+  description = "{{ db.engine }} access from the services that use it"
+  vpc_id      = aws_vpc.main.id
+
+  ingress {
+    description     = "{{ db.engine }} from the services that use it"
+    from_port       = {{ db.port }}
+    to_port         = {{ db.port }}
+    protocol        = "tcp"
+    security_groups = [{% for u in db.users %}aws_security_group.{{ u }}.id{{ ", " if not loop.last }}{% endfor %}]
+  }
+}
+
+# One instance for every service that uses {{ db.engine }}: give each service its own database
+# and user inside it. The master password is generated and kept in Secrets Manager by AWS.
+resource "aws_db_instance" "{{ db.tf }}" {
+  identifier                  = "${local.name}-{{ db.engine }}"
+  engine                      = "{{ db.engine }}"
+  instance_class              = var.rds_instance_class["{{ db.engine }}"]
+  allocated_storage           = {{ db.storage }}
+  storage_type                = "gp3"
+  storage_encrypted           = true
+  multi_az                    = {{ db.multi_az }}
+  db_subnet_group_name        = aws_db_subnet_group.main.name
+  vpc_security_group_ids      = [aws_security_group.rds_{{ db.tf }}.id]
+  publicly_accessible         = false
+  username                    = "dbadmin"
+  manage_master_user_password = true
+  backup_retention_period     = 7
+  auto_minor_version_upgrade  = true
+{% if is_prod %}
+  deletion_protection         = true
+  skip_final_snapshot         = false
+  final_snapshot_identifier   = "${local.name}-{{ db.engine }}-final"
+{% else %}
+  deletion_protection         = false
+  skip_final_snapshot         = true
+{% endif %}
+}
+{% endfor %}
+{% endif %}

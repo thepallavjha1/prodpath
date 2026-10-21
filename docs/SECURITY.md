@@ -15,6 +15,7 @@ This tool reads private source code and may sit next to secrets. Its safety come
 ## 2. Network rules
 
 - Allowed destinations: `127.0.0.1` / `localhost` (Ollama), and the AWS Price List host, only during `prodpath prices update`.
+- The AWS Terraform provider is mirrored once, by the user or a developer, with `terraform providers mirror` from registry.terraform.io (approved 2026-10-21, ADR-015). prodpath itself never runs it and never networks for Terraform; validation reads the local mirror only.
 - Everything else is blocked in tests by the socket guard. Adding any new destination needs an ADR and a user decision.
 - No telemetry, crash reporting, update checks or "phone home" of any kind.
 

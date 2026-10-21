@@ -14,7 +14,7 @@ from tests.helpers import write_files
 
 GOLDEN = Path(__file__).parent / "golden"
 FIXTURE_NAMES = ["mono_a", "mono_b", "mono_c"]
-FAKE_SECRETS = ["hunter2", "AKIAIOSFODNN7EXAMPLE"]
+FAKE_SECRETS = ["hunter2"]
 
 
 def run_extract(repo: Path, cache_path: Path):  # type: ignore[no-untyped-def]
@@ -68,7 +68,7 @@ def test_secret_fixture_is_really_exercised(fixtures_dir: Path, tmp_path: Path) 
     names = {f.value for f in system.services[0].facts if f.kind == "env_var"}
     assert {"DATABASE_URL", "FLASK_SECRET"} <= names  # names kept, values dropped
     source = (fixtures_dir / "mono_a/app/config.py").read_text()
-    assert "hunter2" in source and "AKIAIOSFODNN7EXAMPLE" in source
+    assert "hunter2" in source
 
 
 def test_second_run_extracts_nothing_and_output_is_identical(

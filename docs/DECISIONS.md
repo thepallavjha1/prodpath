@@ -87,4 +87,10 @@ Format: **Status** | **Context** | **Decision** | **Consequences**.
 - **Decision:** Add `Prefs` and `Step` to `models.py`; extend `Component` with `evidence` and `items`, and `Architecture` with `environment` and `unknowns`. `Provider` protocol declares only `choose` and `steps` for now. New modules: `render.py`, `providers/base.py`, `providers/__init__.py`, `providers/aws/rules.py`, `providers/aws/steps.py`. Steps use AWS CLI with placeholders. No new dependency, no LLM in stage 5.
 - **Consequences:** `prodpath plan` is deterministic and works offline. The plan must be re-checked when Phase 5 replaces CLI steps with Terraform. Default region `ap-south-1` is unconfirmed by the user and is listed as an open question in every plan.
 
-<!-- Add new ADRs below. Next number: ADR-015 -->
+## ADR-015: Terraform generation, local provider mirror, Component.params
+- **Status:** Accepted (2026-10-21); the one-time provider download was approved by the user
+- **Context:** Phase 5 must emit valid, readable Terraform. `terraform validate` needs the AWS provider plugin, normally fetched by `terraform init` from registry.terraform.io, which would add a network destination (SECURITY.md section 2). Templates also need machine-readable sizing, which free-text `Component.sizing` cannot give.
+- **Decision:** (1) Add `Component.params: dict[str, str]`. (2) Add `render_iac` and `iac_gaps` to the `Provider` protocol, a `providers/aws/iac.py` renderer with Jinja2 templates, and a top-level `iac_check.py` (self-scan, `terraform fmt`, `terraform validate`). (3) The user approved a one-time `terraform providers mirror ~/.cache/prodpath/terraform-mirror` (hashicorp/aws 6.69.1, 176 MB, windows_amd64); validation always uses that local mirror and never the network. (4) Plan steps are reworked around `terraform apply` (CLI remains for state bootstrap, secrets and image push). (5) AWS provider constraint `>= 5.81, < 7.0`.
+- **Consequences:** Validation is reproducible offline. Components without templates are listed, not hidden. The mirror holds one platform (Windows amd64); other platforms need their own `terraform providers mirror -platform=...`. Rendering is deterministic; goldens store `terraform fmt`-formatted output and are skipped when terraform is absent.
+
+<!-- Add new ADRs below. Next number: ADR-016 -->

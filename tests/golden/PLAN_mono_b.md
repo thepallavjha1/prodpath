@@ -34,7 +34,7 @@ Target: **AWS**, region `ap-south-1`, environment `prod`. 2 services detected, 1
 
 ## Steps
 
-Commands use `<PLACEHOLDERS>` for values only you know. Terraform for these resources is not generated yet, so these are the by-hand route.
+Commands use `<PLACEHOLDERS>` for values only you know.
 
 ### 1. Prepare the AWS account and a budget alarm
 
@@ -62,99 +62,70 @@ aws dynamodb create-table --table-name <LOCK_TABLE> --region ap-south-1 --attrib
 
 **Verify:** aws s3api get-bucket-versioning --bucket <STATE_BUCKET> shows Status: Enabled.
 
-### 3. Create the VPC, subnets and VPC endpoints
+### 3. Review and apply the generated Terraform
 
-Containers and data stores live in private subnets. S3 and ECR endpoints keep image pulls and S3 traffic off the NAT gateway, which bills per hour and per GB processed.
-
-```bash
-aws ec2 create-vpc --cidr-block 10.0.0.0/16 --region ap-south-1
-# Create 2 public and 2 private subnets in different AZs (aws ec2 create-subnet ...)
-# Create an internet gateway, attach it, route the public subnets to it
-aws ec2 create-vpc-endpoint --vpc-id <VPC_ID> --service-name com.amazonaws.ap-south-1.s3 --route-table-ids <PRIVATE_ROUTE_TABLE_ID>
-# Interface endpoints for com.amazonaws.ap-south-1.ecr.api, .ecr.dkr and .logs
-# Add a NAT gateway only if a private service must reach the public internet
-```
-
-**Verify:** aws ec2 describe-vpc-endpoints lists the S3 and ECR endpoints as available.
-
-### 4. Create data stores, caches, queues and buckets
-
-Services need these before they can start. Encryption and private access are on by default in the commands; do not turn them off to make something connect.
+One reviewed plan creates the network, load balancer, data stores, repositories, roles, secret slots and services together. Read the plan before applying; this tool has not touched your account.
 
 ```bash
-aws elasticache create-replication-group --replication-group-id elasticache-redis --replication-group-description <DESC> --engine redis --cache-node-type cache.t4g.micro --at-rest-encryption-enabled --transit-encryption-enabled --cache-subnet-group-name <PRIVATE_SUBNET_GROUP>
+cd .prodpath/out/terraform
+cp terraform.tfvars.example terraform.tfvars   # then fill in every <PLACEHOLDER>
+terraform init -backend-config="bucket=<STATE_BUCKET>" -backend-config="key=<APP_NAME>/prod/terraform.tfstate" -backend-config="region=ap-south-1" -backend-config="dynamodb_table=<LOCK_TABLE>" -backend-config="encrypt=true"
+terraform plan -out=tfplan
+terraform apply tfplan
 ```
 
-**Verify:** Each resource shows 'available' and is not publicly accessible.
+**Verify:** `terraform plan` shows only what you expect; `terraform output` lists ECR repository URLs, secret slots and data store endpoints.
 
-### 5. Create empty secret slots, then fill them yourself
+### 4. Fill the secret slots yourself
 
-This tool only knows variable names, never values, so it cannot and should not set them.
+The slots exist but are empty: this tool only knows variable names, never values. Read values from a file, not the command line, so they stay out of shell history.
 
 ```bash
-aws secretsmanager create-secret --name prod/api/REDIS_URL
-aws secretsmanager create-secret --name prod/worker/REDIS_URL
-# Then set each value yourself, out of band: aws secretsmanager put-secret-value ...
+aws secretsmanager put-secret-value --secret-id prod/api/REDIS_URL --secret-string file://<PATH_TO_FILE_HOLDING_THE_VALUE>
+aws secretsmanager put-secret-value --secret-id prod/worker/REDIS_URL --secret-string file://<PATH_TO_FILE_HOLDING_THE_VALUE>
 ```
 
-**Verify:** aws secretsmanager list-secrets shows every slot; none contain placeholder text.
+**Verify:** aws secretsmanager list-secrets shows every slot; none hold placeholder text.
 
-### 6. Create image repositories and push the first images
+### 5. Build and push the first images
 
-Services cannot be created before an image exists. Tag with the git SHA, never 'latest'.
+Services stay pending until their image tag exists in ECR. Tag with the git SHA (repositories are immutable, so 'latest' cannot be reused).
 
 ```bash
 aws ecr get-login-password --region ap-south-1 | docker login --username AWS --password-stdin <ACCOUNT_ID>.dkr.ecr.ap-south-1.amazonaws.com
-aws ecr create-repository --repository-name ecr-api --image-scanning-configuration scanOnPush=true
-docker build -t <ACCOUNT_ID>.dkr.ecr.ap-south-1.amazonaws.com/ecr-api:<GIT_SHA> <PATH_TO_API>
-docker push <ACCOUNT_ID>.dkr.ecr.ap-south-1.amazonaws.com/ecr-api:<GIT_SHA>
-aws ecr create-repository --repository-name ecr-worker --image-scanning-configuration scanOnPush=true
-docker build -t <ACCOUNT_ID>.dkr.ecr.ap-south-1.amazonaws.com/ecr-worker:<GIT_SHA> <PATH_TO_WORKER>
-docker push <ACCOUNT_ID>.dkr.ecr.ap-south-1.amazonaws.com/ecr-worker:<GIT_SHA>
+docker build -t <ECR_URL_FOR_API>:<GIT_SHA> <PATH_TO_API>
+docker push <ECR_URL_FOR_API>:<GIT_SHA>
+docker build -t <ECR_URL_FOR_WORKER>:<GIT_SHA> <PATH_TO_WORKER>
+docker push <ECR_URL_FOR_WORKER>:<GIT_SHA>
+aws ecs update-service --cluster <CLUSTER_NAME> --service api --force-new-deployment
+aws ecs update-service --cluster <CLUSTER_NAME> --service worker --force-new-deployment
 ```
 
-**Verify:** aws ecr describe-images --repository-name <REPO> lists the pushed tag.
+**Verify:** aws ecr describe-images lists the tag; services reach steady state.
 
-### 7. Create the cluster, load balancer and services
+### 6. Wire GitHub Actions to the deploy role
 
-Each service runs from its image with its own task role and its secrets injected from Secrets Manager, not baked into the image.
+Terraform created a role that only your repository and branch can assume through OIDC, so no AWS keys are stored in GitHub.
 
 ```bash
-aws ecs create-cluster --cluster-name <CLUSTER_NAME>
-aws elbv2 create-load-balancer --name <ALB_NAME> --subnets <PUBLIC_SUBNET_IDS> --security-groups <ALB_SG>
-# Add an HTTPS listener with your ACM certificate; redirect HTTP to HTTPS
-# ecs-svc-api: container port 8000, target-group health check <HEALTH_PATH?>
-aws ecs create-service --cluster <CLUSTER_NAME> --service-name ecs-svc-api --launch-type FARGATE ...
-aws ecs create-service --cluster <CLUSTER_NAME> --service-name ecs-svc-worker --launch-type FARGATE ...
+# In your workflow: permissions: { id-token: write, contents: read }
+# uses: aws-actions/configure-aws-credentials with role-to-assume: <terraform output github_actions_role_arn>
+# Then: build, push the image tagged with the git SHA, register a new task definition revision, aws ecs update-service
 ```
 
-**Verify:** Services reach steady state; target groups report healthy.
+**Verify:** A workflow run on the allowed branch assumes the role and deploys; other branches are denied.
 
-### 8. Set up GitHub Actions deploys through OIDC
+### 7. Add alarms (not generated yet)
 
-A role assumed through OIDC means no AWS keys stored in GitHub.
+Log groups and their retention come from Terraform. Alarms are not generated in this version; without them nobody is told when something breaks.
 
 ```bash
-aws iam create-open-id-connect-provider --url https://token.actions.githubusercontent.com --client-id-list sts.amazonaws.com
-# Create a role trusted by that provider, restricted to your repo and branch (sub = repo:<ORG>/<REPO>:ref:refs/heads/main), with permission to push to ECR and update the services
+# Suggested minimum: ALB 5xx rate and unhealthy host count, ECS service CPU and memory, RDS CPU, free storage and connections, and an SNS topic or chat webhook
 ```
 
-**Verify:** A workflow run assumes the role (aws-actions/configure-aws-credentials) and pushes an image.
+**Verify:** Trigger a test alarm and confirm you receive the notification.
 
-### 9. Set log retention and basic alarms
-
-Logs without retention grow and bill forever; an alarm on 5xx and unhealthy targets tells you before users do.
-
-```bash
-aws logs create-log-group --log-group-name /<APP>/logs-api --region ap-south-1
-aws logs create-log-group --log-group-name /<APP>/logs-worker --region ap-south-1
-aws logs put-retention-policy --log-group-name /<APP>/logs-api --retention-in-days 30
-aws logs put-retention-policy --log-group-name /<APP>/logs-worker --retention-in-days 30
-```
-
-**Verify:** aws logs describe-log-groups shows retentionInDays on every group.
-
-### 10. Know how to roll back before you need to
+### 8. Know how to roll back before you need to
 
 Rollback is easiest when decided in advance.
 
@@ -165,7 +136,7 @@ Rollback is easiest when decided in advance.
 
 **Verify:** Practice one rollback in a non-production environment.
 
-### 11. Verify the deployment end to end
+### 9. Verify the deployment end to end
 
 Health endpoints and logs are the first evidence the system works.
 
@@ -177,6 +148,22 @@ curl -fsS https://<HOST_FOR_ECS_SVC_API>/<HEALTH_PATH?>
 **Verify:** Every web service answers its health check; no errors in the logs for 15 minutes.
 
 
+## Terraform
+
+15 files were written to `.prodpath/out/terraform/`: `README.md`, `alb.tf`, `backend.tf`, `ecr.tf`, `ecs.tf`, `elasticache.tf`, `github_oidc.tf`, `iam.tf`, `main.tf`, `network.tf`, `outputs.tf`, `secrets.tf`, `terraform.tfvars.example`, `variables.tf`, `versions.tf`.
+
+**Checks run by this tool**
+
+- self-scan: passed: no account ids, keys or literal secrets found
+- terraform fmt: not run: terraform is not on PATH
+- terraform validate: not run: terraform is not on PATH
+
+**Terraform coverage**
+
+Every planned component has a template.
+
+`terraform validate` checks syntax and provider schema, not whether the design is right or safe for your account. Read `terraform plan` before applying.
+
 ## Risks
 
 - `elasticache-redis` is shared by api, worker: one outage or heavy query affects all of them. Split it if you need isolation.
@@ -184,6 +171,7 @@ curl -fsS https://<HOST_FOR_ECS_SVC_API>/<HEALTH_PATH?>
 ## Unknowns and open questions
 
 - Domain name and ACM certificate are needed for HTTPS on the load balancer.
+- Redis: in-transit encryption is on, so clients must connect with TLS (rediss://); check each service's Redis client settings.
 - Traffic and data volume are unknown: all sizing is a default starting point.
 - Confirm the AWS region (assumed `ap-south-1`).
 

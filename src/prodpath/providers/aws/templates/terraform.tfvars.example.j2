@@ -1,0 +1,28 @@
+# Copy to terraform.tfvars and fill in the <PLACEHOLDERS>. Never commit real secrets here.
+app_name = "<APP_NAME>"
+{% if services %}
+
+# Git SHA of the image to run for each service (build and push first, see README.md).
+image_tags = {
+{% for s in services %}
+  "{{ s.id }}" = "<GIT_SHA>"
+{% endfor %}
+}
+{% endif %}
+{% if has_alb %}
+
+certificate_arn = "<ACM_CERTIFICATE_ARN>"
+domain_name     = "<YOUR_DOMAIN>"
+{% endif %}
+{% if cron_services %}
+
+schedule_expressions = {
+{% for s in cron_services %}
+  "{{ s.id }}" = "cron(0 2 * * ? *)" # example only: replace with the real schedule
+{% endfor %}
+}
+{% endif %}
+{% if has_github %}
+
+github_repo = "<ORG>/<REPO>"
+{% endif %}

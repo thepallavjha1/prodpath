@@ -11,7 +11,8 @@
       "reason": "Remote state with locking keeps Terraform safe once more than one person or pipeline applies changes (SECURITY.md section 5).",
       "serves": [],
       "evidence": [],
-      "items": []
+      "items": [],
+      "params": {}
     },
     {
       "type": "iam-github-oidc",
@@ -22,7 +23,8 @@
         "root"
       ],
       "evidence": [],
-      "items": []
+      "items": [],
+      "params": {}
     },
     {
       "type": "vpc",
@@ -39,7 +41,8 @@
           "snippet": "EXPOSE 8000"
         }
       ],
-      "items": []
+      "items": [],
+      "params": {}
     },
     {
       "type": "ecs-cluster",
@@ -56,7 +59,8 @@
           "snippet": "EXPOSE 8000"
         }
       ],
-      "items": []
+      "items": [],
+      "params": {}
     },
     {
       "type": "alb",
@@ -73,7 +77,8 @@
           "snippet": "EXPOSE 8000"
         }
       ],
-      "items": []
+      "items": [],
+      "params": {}
     },
     {
       "type": "ecr",
@@ -90,7 +95,8 @@
           "snippet": "EXPOSE 8000"
         }
       ],
-      "items": []
+      "items": [],
+      "params": {}
     },
     {
       "type": "rds",
@@ -107,7 +113,13 @@
           "snippet": "psycopg2-binary"
         }
       ],
-      "items": []
+      "items": [],
+      "params": {
+        "engine": "postgres",
+        "instance_class": "db.t4g.small",
+        "allocated_storage": "20",
+        "multi_az": "true"
+      }
     },
     {
       "type": "s3",
@@ -124,7 +136,8 @@
           "snippet": "boto3.client(\"s3\")"
         }
       ],
-      "items": []
+      "items": [],
+      "params": {}
     },
     {
       "type": "secrets",
@@ -149,7 +162,8 @@
       "items": [
         "DATABASE_URL",
         "FLASK_SECRET"
-      ]
+      ],
+      "params": {}
     },
     {
       "type": "log-group",
@@ -166,7 +180,10 @@
           "snippet": "EXPOSE 8000"
         }
       ],
-      "items": []
+      "items": [],
+      "params": {
+        "retention_days": "30"
+      }
     },
     {
       "type": "iam-task-role",
@@ -183,7 +200,8 @@
           "snippet": "EXPOSE 8000"
         }
       ],
-      "items": []
+      "items": [],
+      "params": {}
     },
     {
       "type": "ecs-service-web",
@@ -203,7 +221,12 @@
       "items": [
         "port:8000",
         "health:/health"
-      ]
+      ],
+      "params": {
+        "cpu": "512",
+        "memory": "1024",
+        "desired_count": "2"
+      }
     }
   ],
   "unknowns": [

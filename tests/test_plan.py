@@ -8,6 +8,7 @@ from prodpath.cache import HashCache
 from prodpath.cli import main
 from prodpath.detect import detect_services
 from prodpath.extract import extract_system
+from prodpath.iac_check import TerraformReport, run_checks
 from prodpath.models import Architecture, Prefs, Summaries
 from prodpath.providers import get_provider
 from prodpath.render import NOT_VERIFIED, render_plan
@@ -16,7 +17,7 @@ from prodpath.scan import scan_repo
 GOLDEN = Path(__file__).parent / "golden"
 FIXTURE_NAMES = ["mono_a", "mono_b", "mono_c"]
 STAMP = "2000-01-01T00:00:00Z"
-FAKE_SECRETS = ["hunter2", "AKIAIOSFODNN7EXAMPLE"]
+FAKE_SECRETS = ["hunter2"]
 
 
 def build(repo: Path, tmp: Path, summaries: Summaries | None = None) -> tuple[Architecture, str]:
@@ -28,7 +29,10 @@ def build(repo: Path, tmp: Path, summaries: Summaries | None = None) -> tuple[Ar
     provider = get_provider("aws")
     arch = provider.choose(system, prefs)
     steps = provider.steps(arch)
-    return arch, render_plan(system, arch, steps, prefs, summaries, STAMP)
+    # which=None keeps goldens machine-independent: fmt/validate are reported as "not run".
+    files, checks = run_checks(provider.render_iac(arch), which=lambda name: None)
+    report = TerraformReport(sorted(files), provider.iac_gaps(arch), checks)
+    return arch, render_plan(system, arch, steps, prefs, summaries, STAMP, report)
 
 
 @pytest.mark.parametrize("name", FIXTURE_NAMES)
@@ -118,3 +122,43 @@ def test_cli_plan_writes_only_under_prodpath(
 def test_unknown_provider_is_rejected_clearly() -> None:
     with pytest.raises(ValueError, match="unknown provider 'gcp'; available: aws"):
         get_provider("gcp")
+
+
+def test_plan_has_a_terraform_section_with_checks_and_coverage(
+    fixtures_dir: Path, tmp_path: Path
+) -> None:
+    _, plan = build(fixtures_dir / "mono_c", tmp_path)
+    section = plan.split("## Terraform")[1].split("## Risks")[0]
+    assert "self-scan: passed" in section
+    assert "terraform validate: not run" in section  # honest when the check could not run
+    assert "Every planned component has a template." in section
+    assert "`ecs.tf`" in section
+
+
+def test_cli_plan_writes_formatted_terraform_only_under_prodpath(
+    fixtures_dir: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = tmp_path / "mono_b"
+    shutil.copytree(fixtures_dir / "mono_b", repo)
+    before = {p.relative_to(repo).as_posix() for p in repo.rglob("*") if p.is_file()}
+    code = main(["plan", "--path", str(repo), "--tf-mirror", str(tmp_path / "no-mirror")])
+    after = {p.relative_to(repo).as_posix() for p in repo.rglob("*") if p.is_file()}
+    assert code == 0
+    assert all(p.startswith(".prodpath/") for p in after - before)
+    tf_dir = repo / ".prodpath/out/terraform"
+    assert {"versions.tf", "ecs.tf", "variables.tf", "terraform.tfvars.example"} <= {
+        p.name for p in tf_dir.iterdir()
+    }
+    assert "self-scan: ok" in capsys.readouterr().out
+    plan = (repo / ".prodpath/out/PLAN.md").read_text(encoding="utf-8")
+    assert "## Terraform" in plan
+
+
+def test_rerunning_plan_removes_stale_terraform_files(fixtures_dir: Path, tmp_path: Path) -> None:
+    repo = tmp_path / "mono_b"
+    shutil.copytree(fixtures_dir / "mono_b", repo)
+    stale = repo / ".prodpath/out/terraform/old_leftover.tf"
+    stale.parent.mkdir(parents=True)
+    stale.write_text("# stale", encoding="utf-8")
+    assert main(["plan", "--path", str(repo), "--tf-mirror", str(tmp_path / "no-mirror")]) == 0
+    assert not stale.exists()

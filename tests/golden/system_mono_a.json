@@ -69,7 +69,7 @@
             {
               "path": "app/config.py",
               "line": 1,
-              "snippet": "import boto3  # key [REDACTED_AWS_KEY] password=[REDACTED]"
+              "snippet": "import boto3  # password=[REDACTED]"
             }
           ],
           "certainty": "parsed"

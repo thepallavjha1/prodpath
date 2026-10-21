@@ -57,7 +57,7 @@ Target: **AWS**, region `ap-south-1`, environment `prod`. 8 services detected, 3
 
 ## Steps
 
-Commands use `<PLACEHOLDERS>` for values only you know. Terraform for these resources is not generated yet, so these are the by-hand route.
+Commands use `<PLACEHOLDERS>` for values only you know.
 
 ### 1. Prepare the AWS account and a budget alarm
 
@@ -85,138 +85,82 @@ aws dynamodb create-table --table-name <LOCK_TABLE> --region ap-south-1 --attrib
 
 **Verify:** aws s3api get-bucket-versioning --bucket <STATE_BUCKET> shows Status: Enabled.
 
-### 3. Create the VPC, subnets and VPC endpoints
+### 3. Review and apply the generated Terraform
 
-Containers and data stores live in private subnets. S3 and ECR endpoints keep image pulls and S3 traffic off the NAT gateway, which bills per hour and per GB processed.
-
-```bash
-aws ec2 create-vpc --cidr-block 10.0.0.0/16 --region ap-south-1
-# Create 2 public and 2 private subnets in different AZs (aws ec2 create-subnet ...)
-# Create an internet gateway, attach it, route the public subnets to it
-aws ec2 create-vpc-endpoint --vpc-id <VPC_ID> --service-name com.amazonaws.ap-south-1.s3 --route-table-ids <PRIVATE_ROUTE_TABLE_ID>
-# Interface endpoints for com.amazonaws.ap-south-1.ecr.api, .ecr.dkr and .logs
-# Add a NAT gateway only if a private service must reach the public internet
-```
-
-**Verify:** aws ec2 describe-vpc-endpoints lists the S3 and ECR endpoints as available.
-
-### 4. Create data stores, caches, queues and buckets
-
-Services need these before they can start. Encryption and private access are on by default in the commands; do not turn them off to make something connect.
+One reviewed plan creates the network, load balancer, data stores, repositories, roles, secret slots and services together. Read the plan before applying; this tool has not touched your account.
 
 ```bash
-aws rds create-db-instance --db-instance-identifier rds-postgres --engine postgres --db-instance-class <INSTANCE_CLASS> --allocated-storage 20 --storage-encrypted --multi-az --backup-retention-period 7 --manage-master-user-password --master-username <ADMIN_USER> --db-subnet-group-name <PRIVATE_SUBNET_GROUP> --no-publicly-accessible
-aws elasticache create-replication-group --replication-group-id elasticache-redis --replication-group-description <DESC> --engine redis --cache-node-type cache.t4g.micro --at-rest-encryption-enabled --transit-encryption-enabled --cache-subnet-group-name <PRIVATE_SUBNET_GROUP>
+cd .prodpath/out/terraform
+cp terraform.tfvars.example terraform.tfvars   # then fill in every <PLACEHOLDER>
+terraform init -backend-config="bucket=<STATE_BUCKET>" -backend-config="key=<APP_NAME>/prod/terraform.tfstate" -backend-config="region=ap-south-1" -backend-config="dynamodb_table=<LOCK_TABLE>" -backend-config="encrypt=true"
+terraform plan -out=tfplan
+terraform apply tfplan
 ```
 
-**Verify:** Each resource shows 'available' and is not publicly accessible.
+**Verify:** `terraform plan` shows only what you expect; `terraform output` lists ECR repository URLs, secret slots and data store endpoints.
 
-### 5. Create empty secret slots, then fill them yourself
+### 4. Fill the secret slots yourself
 
-This tool only knows variable names, never values, so it cannot and should not set them.
+The slots exist but are empty: this tool only knows variable names, never values. Read values from a file, not the command line, so they stay out of shell history. Database URLs: use the host from `terraform output data_store_endpoints` and the master credentials from `rds_master_secret_arns`, ideally a separate user per service.
 
 ```bash
-aws secretsmanager create-secret --name prod/apps-billing/DATABASE_URL
-aws secretsmanager create-secret --name prod/apps-gateway/BILLING_URL
-aws secretsmanager create-secret --name prod/apps-gateway/USERS_URL
-# Then set each value yourself, out of band: aws secretsmanager put-secret-value ...
+aws secretsmanager put-secret-value --secret-id prod/apps-billing/DATABASE_URL --secret-string file://<PATH_TO_FILE_HOLDING_THE_VALUE>
+aws secretsmanager put-secret-value --secret-id prod/apps-gateway/BILLING_URL --secret-string file://<PATH_TO_FILE_HOLDING_THE_VALUE>
+aws secretsmanager put-secret-value --secret-id prod/apps-gateway/USERS_URL --secret-string file://<PATH_TO_FILE_HOLDING_THE_VALUE>
 ```
 
-**Verify:** aws secretsmanager list-secrets shows every slot; none contain placeholder text.
+**Verify:** aws secretsmanager list-secrets shows every slot; none hold placeholder text.
 
-### 6. Create image repositories and push the first images
+### 5. Build and push the first images
 
-Services cannot be created before an image exists. Tag with the git SHA, never 'latest'.
+Services stay pending until their image tag exists in ECR. Tag with the git SHA (repositories are immutable, so 'latest' cannot be reused).
 
 ```bash
 aws ecr get-login-password --region ap-south-1 | docker login --username AWS --password-stdin <ACCOUNT_ID>.dkr.ecr.ap-south-1.amazonaws.com
-aws ecr create-repository --repository-name ecr-apps-billing --image-scanning-configuration scanOnPush=true
-docker build -t <ACCOUNT_ID>.dkr.ecr.ap-south-1.amazonaws.com/ecr-apps-billing:<GIT_SHA> <PATH_TO_APPS_BILLING>
-docker push <ACCOUNT_ID>.dkr.ecr.ap-south-1.amazonaws.com/ecr-apps-billing:<GIT_SHA>
-aws ecr create-repository --repository-name ecr-apps-gateway --image-scanning-configuration scanOnPush=true
-docker build -t <ACCOUNT_ID>.dkr.ecr.ap-south-1.amazonaws.com/ecr-apps-gateway:<GIT_SHA> <PATH_TO_APPS_GATEWAY>
-docker push <ACCOUNT_ID>.dkr.ecr.ap-south-1.amazonaws.com/ecr-apps-gateway:<GIT_SHA>
-aws ecr create-repository --repository-name ecr-apps-notifier --image-scanning-configuration scanOnPush=true
-docker build -t <ACCOUNT_ID>.dkr.ecr.ap-south-1.amazonaws.com/ecr-apps-notifier:<GIT_SHA> <PATH_TO_APPS_NOTIFIER>
-docker push <ACCOUNT_ID>.dkr.ecr.ap-south-1.amazonaws.com/ecr-apps-notifier:<GIT_SHA>
-aws ecr create-repository --repository-name ecr-apps-reports --image-scanning-configuration scanOnPush=true
-docker build -t <ACCOUNT_ID>.dkr.ecr.ap-south-1.amazonaws.com/ecr-apps-reports:<GIT_SHA> <PATH_TO_APPS_REPORTS>
-docker push <ACCOUNT_ID>.dkr.ecr.ap-south-1.amazonaws.com/ecr-apps-reports:<GIT_SHA>
-aws ecr create-repository --repository-name ecr-apps-users --image-scanning-configuration scanOnPush=true
-docker build -t <ACCOUNT_ID>.dkr.ecr.ap-south-1.amazonaws.com/ecr-apps-users:<GIT_SHA> <PATH_TO_APPS_USERS>
-docker push <ACCOUNT_ID>.dkr.ecr.ap-south-1.amazonaws.com/ecr-apps-users:<GIT_SHA>
-aws ecr create-repository --repository-name ecr-apps-web --image-scanning-configuration scanOnPush=true
-docker build -t <ACCOUNT_ID>.dkr.ecr.ap-south-1.amazonaws.com/ecr-apps-web:<GIT_SHA> <PATH_TO_APPS_WEB>
-docker push <ACCOUNT_ID>.dkr.ecr.ap-south-1.amazonaws.com/ecr-apps-web:<GIT_SHA>
+docker build -t <ECR_URL_FOR_APPS_BILLING>:<GIT_SHA> <PATH_TO_APPS_BILLING>
+docker push <ECR_URL_FOR_APPS_BILLING>:<GIT_SHA>
+docker build -t <ECR_URL_FOR_APPS_GATEWAY>:<GIT_SHA> <PATH_TO_APPS_GATEWAY>
+docker push <ECR_URL_FOR_APPS_GATEWAY>:<GIT_SHA>
+docker build -t <ECR_URL_FOR_APPS_NOTIFIER>:<GIT_SHA> <PATH_TO_APPS_NOTIFIER>
+docker push <ECR_URL_FOR_APPS_NOTIFIER>:<GIT_SHA>
+docker build -t <ECR_URL_FOR_APPS_REPORTS>:<GIT_SHA> <PATH_TO_APPS_REPORTS>
+docker push <ECR_URL_FOR_APPS_REPORTS>:<GIT_SHA>
+docker build -t <ECR_URL_FOR_APPS_USERS>:<GIT_SHA> <PATH_TO_APPS_USERS>
+docker push <ECR_URL_FOR_APPS_USERS>:<GIT_SHA>
+docker build -t <ECR_URL_FOR_APPS_WEB>:<GIT_SHA> <PATH_TO_APPS_WEB>
+docker push <ECR_URL_FOR_APPS_WEB>:<GIT_SHA>
+aws ecs update-service --cluster <CLUSTER_NAME> --service apps-billing --force-new-deployment
+aws ecs update-service --cluster <CLUSTER_NAME> --service apps-gateway --force-new-deployment
+aws ecs update-service --cluster <CLUSTER_NAME> --service apps-notifier --force-new-deployment
+aws ecs update-service --cluster <CLUSTER_NAME> --service apps-users --force-new-deployment
+aws ecs update-service --cluster <CLUSTER_NAME> --service apps-web --force-new-deployment
 ```
 
-**Verify:** aws ecr describe-images --repository-name <REPO> lists the pushed tag.
+**Verify:** aws ecr describe-images lists the tag; services reach steady state.
 
-### 7. Create the cluster, load balancer and services
+### 6. Wire GitHub Actions to the deploy role
 
-Each service runs from its image with its own task role and its secrets injected from Secrets Manager, not baked into the image.
+Terraform created a role that only your repository and branch can assume through OIDC, so no AWS keys are stored in GitHub.
 
 ```bash
-aws ecs create-cluster --cluster-name <CLUSTER_NAME>
-aws elbv2 create-load-balancer --name <ALB_NAME> --subnets <PUBLIC_SUBNET_IDS> --security-groups <ALB_SG>
-# Add an HTTPS listener with your ACM certificate; redirect HTTP to HTTPS
-# ecs-svc-apps-billing: container port 8000, target-group health check <HEALTH_PATH?>
-aws ecs create-service --cluster <CLUSTER_NAME> --service-name ecs-svc-apps-billing --launch-type FARGATE ...
-# ecs-svc-apps-gateway: container port 3000, target-group health check /health
-aws ecs create-service --cluster <CLUSTER_NAME> --service-name ecs-svc-apps-gateway --launch-type FARGATE ...
-# ecs-svc-apps-notifier: container port 3000, target-group health check /health
-aws ecs create-service --cluster <CLUSTER_NAME> --service-name ecs-svc-apps-notifier --launch-type FARGATE ...
-# ecs-svc-apps-users: container port 8000, target-group health check <HEALTH_PATH?>
-aws ecs create-service --cluster <CLUSTER_NAME> --service-name ecs-svc-apps-users --launch-type FARGATE ...
-# ecs-svc-apps-web: container port 3000, target-group health check /health
-aws ecs create-service --cluster <CLUSTER_NAME> --service-name ecs-svc-apps-web --launch-type FARGATE ...
+# In your workflow: permissions: { id-token: write, contents: read }
+# uses: aws-actions/configure-aws-credentials with role-to-assume: <terraform output github_actions_role_arn>
+# Then: build, push the image tagged with the git SHA, register a new task definition revision, aws ecs update-service
 ```
 
-**Verify:** Services reach steady state; target groups report healthy.
+**Verify:** A workflow run on the allowed branch assumes the role and deploys; other branches are denied.
 
-### 8. Create the scheduled jobs
+### 7. Add alarms (not generated yet)
 
-EventBridge Scheduler starts a Fargate task on a schedule. The schedule itself was not found in the code, so you must provide it.
+Log groups and their retention come from Terraform. Alarms are not generated in this version; without them nobody is told when something breaks.
 
 ```bash
-aws scheduler create-schedule --name cron-apps-reports --schedule-expression '<CRON_EXPRESSION>' ...
+# Suggested minimum: ALB 5xx rate and unhealthy host count, ECS service CPU and memory, RDS CPU, free storage and connections, and an SNS topic or chat webhook
 ```
 
-**Verify:** Trigger one run by hand and check the task exits with code 0 in CloudWatch logs.
+**Verify:** Trigger a test alarm and confirm you receive the notification.
 
-### 9. Set up GitHub Actions deploys through OIDC
-
-A role assumed through OIDC means no AWS keys stored in GitHub.
-
-```bash
-aws iam create-open-id-connect-provider --url https://token.actions.githubusercontent.com --client-id-list sts.amazonaws.com
-# Create a role trusted by that provider, restricted to your repo and branch (sub = repo:<ORG>/<REPO>:ref:refs/heads/main), with permission to push to ECR and update the services
-```
-
-**Verify:** A workflow run assumes the role (aws-actions/configure-aws-credentials) and pushes an image.
-
-### 10. Set log retention and basic alarms
-
-Logs without retention grow and bill forever; an alarm on 5xx and unhealthy targets tells you before users do.
-
-```bash
-aws logs create-log-group --log-group-name /<APP>/logs-apps-billing --region ap-south-1
-aws logs create-log-group --log-group-name /<APP>/logs-apps-gateway --region ap-south-1
-aws logs create-log-group --log-group-name /<APP>/logs-apps-notifier --region ap-south-1
-aws logs create-log-group --log-group-name /<APP>/logs-apps-reports --region ap-south-1
-aws logs create-log-group --log-group-name /<APP>/logs-apps-users --region ap-south-1
-aws logs create-log-group --log-group-name /<APP>/logs-apps-web --region ap-south-1
-aws logs put-retention-policy --log-group-name /<APP>/logs-apps-billing --retention-in-days 30
-aws logs put-retention-policy --log-group-name /<APP>/logs-apps-gateway --retention-in-days 30
-aws logs put-retention-policy --log-group-name /<APP>/logs-apps-notifier --retention-in-days 30
-aws logs put-retention-policy --log-group-name /<APP>/logs-apps-reports --retention-in-days 30
-aws logs put-retention-policy --log-group-name /<APP>/logs-apps-users --retention-in-days 30
-aws logs put-retention-policy --log-group-name /<APP>/logs-apps-web --retention-in-days 30
-```
-
-**Verify:** aws logs describe-log-groups shows retentionInDays on every group.
-
-### 11. Know how to roll back before you need to
+### 8. Know how to roll back before you need to
 
 Rollback is easiest when decided in advance.
 
@@ -227,7 +171,7 @@ Rollback is easiest when decided in advance.
 
 **Verify:** Practice one rollback in a non-production environment.
 
-### 12. Verify the deployment end to end
+### 9. Verify the deployment end to end
 
 Health endpoints and logs are the first evidence the system works.
 
@@ -243,6 +187,22 @@ curl -fsS https://<HOST_FOR_ECS_SVC_APPS_WEB>/health
 **Verify:** Every web service answers its health check; no errors in the logs for 15 minutes.
 
 
+## Terraform
+
+17 files were written to `.prodpath/out/terraform/`: `README.md`, `alb.tf`, `backend.tf`, `ecr.tf`, `ecs.tf`, `elasticache.tf`, `github_oidc.tf`, `iam.tf`, `main.tf`, `network.tf`, `outputs.tf`, `rds.tf`, `scheduler.tf`, `secrets.tf`, `terraform.tfvars.example`, `variables.tf`, `versions.tf`.
+
+**Checks run by this tool**
+
+- self-scan: passed: no account ids, keys or literal secrets found
+- terraform fmt: not run: terraform is not on PATH
+- terraform validate: not run: terraform is not on PATH
+
+**Terraform coverage**
+
+Every planned component has a template.
+
+`terraform validate` checks syntax and provider schema, not whether the design is right or safe for your account. Read `terraform plan` before applying.
+
 ## Risks
 
 No specific risks were derived. See the unknowns below.
@@ -250,6 +210,7 @@ No specific risks were derived. See the unknowns below.
 ## Unknowns and open questions
 
 - Domain name and ACM certificate are needed for HTTPS on the load balancer.
+- Redis: in-transit encryption is on, so clients must connect with TLS (rediss://); check each service's Redis client settings.
 - Traffic and data volume are unknown: all sizing is a default starting point.
 - apps-reports: the schedule was not extracted; set the cron expression yourself.
 - apps-reports: writes local files; container disk is ephemeral. Move that state to S3 or a database before relying on it.

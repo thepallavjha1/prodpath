@@ -1,0 +1,33 @@
+{% for b in buckets %}
+# Bucket for {{ b.service }}. The name is generated (prefix + suffix) because S3 names are global.
+resource "aws_s3_bucket" "{{ b.tf }}" {
+  bucket_prefix = substr("${local.name}-{{ b.prefix }}", 0, 37)
+}
+
+resource "aws_s3_bucket_public_access_block" "{{ b.tf }}" {
+  bucket                  = aws_s3_bucket.{{ b.tf }}.id
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "{{ b.tf }}" {
+  bucket = aws_s3_bucket.{{ b.tf }}.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+resource "aws_s3_bucket_versioning" "{{ b.tf }}" {
+  bucket = aws_s3_bucket.{{ b.tf }}.id
+
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+{% endfor %}

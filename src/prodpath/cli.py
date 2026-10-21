@@ -1,5 +1,6 @@
 import argparse
 import logging
+import shutil
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
@@ -9,6 +10,7 @@ from prodpath.cache import HashCache
 from prodpath.detect import detect_services
 from prodpath.doctor import format_checks, run_doctor
 from prodpath.extract import extract_system
+from prodpath.iac_check import DEFAULT_MIRROR, TerraformReport, run_checks
 from prodpath.llm import (
     DEFAULT_MAX_INPUT_TOKENS,
     DEFAULT_MODEL,
@@ -49,6 +51,9 @@ def build_parser() -> argparse.ArgumentParser:
     plan.add_argument("--provider", default="aws", choices=["aws"], help="target cloud")
     plan.add_argument("--region", default=Prefs().region, help="cloud region")
     plan.add_argument("--env", default="prod", choices=["prod", "nonprod"], help="environment")
+    plan.add_argument(
+        "--tf-mirror", type=Path, default=DEFAULT_MIRROR, help="local Terraform provider mirror"
+    )
     return parser
 
 
@@ -172,7 +177,15 @@ def load_summaries(path: Path) -> Summaries | None:
         return None
 
 
-def run_plan(repo: Path, prefs: Prefs) -> int:
+def write_terraform(out_dir: Path, files: dict[str, str]) -> None:
+    target = out_dir / "out" / "terraform"
+    shutil.rmtree(target, ignore_errors=True)  # our own output directory; avoids stale files
+    target.mkdir(parents=True, exist_ok=True)
+    for name, text in sorted(files.items()):
+        (target / name).write_text(text, encoding="utf-8", newline="\n")
+
+
+def run_plan(repo: Path, prefs: Prefs, mirror: Path) -> int:
     repo = repo.resolve()
     out_dir = repo / OUTPUT_DIR
     cache = HashCache(out_dir / "cache.sqlite")
@@ -184,19 +197,34 @@ def run_plan(repo: Path, prefs: Prefs) -> int:
     provider = get_provider(prefs.provider)
     arch = provider.choose(system, prefs)
     steps = provider.steps(arch)
+    files, checks = run_checks(provider.render_iac(arch), mirror, workdir=out_dir / "tfcheck")
+    shutil.rmtree(out_dir / "tfcheck", ignore_errors=True)
+    if any(c.name == "self-scan" and c.status == "fail" for c in checks):
+        print(
+            f"error: generated Terraform failed the self-scan: {checks[0].detail}", file=sys.stderr
+        )
+        return 1
+    report = TerraformReport(sorted(files), provider.iac_gaps(arch), checks) if files else None
     summaries = load_summaries(out_dir / "summaries.json")
     stamp = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-    plan = render_plan(system, arch, steps, prefs, summaries, stamp)
+    plan = render_plan(system, arch, steps, prefs, summaries, stamp, report)
     (out_dir / "out").mkdir(parents=True, exist_ok=True)
     (out_dir / "architecture.json").write_text(
         arch.model_dump_json(indent=2) + "\n", encoding="utf-8"
     )
     (out_dir / "out" / "PLAN.md").write_text(plan, encoding="utf-8")
+    if files:
+        write_terraform(out_dir, files)
     print(f"wrote {out_dir / 'out' / 'PLAN.md'}")
     print(f"{len(arch.components)} components, {len(steps)} steps, {len(arch.unknowns)} unknowns")
+    for check in checks:
+        print(
+            f"  {check.name}: {check.status}"
+            + ("" if check.status == "ok" else f" ({check.detail[:160]})")
+        )
     if summaries is None:
         print("note: no summaries.json; run `prodpath summarize` to add service purposes")
-    return 0
+    return 1 if any(c.status == "fail" for c in checks) else 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -208,7 +236,7 @@ def main(argv: list[str] | None = None) -> int:
         return run_facts(args.path, args.service)
     if args.command == "plan":
         prefs = Prefs(provider=args.provider, region=args.region, environment=args.env)
-        return run_plan(args.path, prefs)
+        return run_plan(args.path, prefs, args.tf_mirror)
     if args.command == "summarize":
         return run_summarize(args.path, args.model, args.num_ctx)
     if args.command == "doctor":

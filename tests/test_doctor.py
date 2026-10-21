@@ -1,10 +1,12 @@
 import subprocess
+from pathlib import Path
 
 import httpx
 
 from prodpath.doctor import format_checks, run_doctor
 from prodpath.llm import OLLAMA_URL
 
+NO_MIRROR = Path("does-not-exist-mirror")
 TAGS = {
     "models": [
         {"name": "small:latest", "size": 2_200_000_000},
@@ -32,15 +34,17 @@ def statuses(checks) -> dict[str, str]:  # type: ignore[no-untyped-def]
     return {c.name: c.status for c in checks}
 
 
-def test_everything_fine() -> None:
+def test_everything_fine(tmp_path: Path) -> None:
     checks = run_doctor(
         "small",
         client_returning(httpx.Response(200, json=TAGS)),
         smi("NVIDIA GeForce GTX 1650, 4096\n"),
         lambda name: "/bin/terraform",
+        mirror=tmp_path,
     )
     assert statuses(checks) == {
-        "ollama": "ok", "model": "ok", "gpu": "ok", "fit": "ok", "terraform": "ok",
+        "ollama": "ok", "model": "ok", "gpu": "ok", "fit": "ok",
+        "terraform": "ok", "tf-mirror": "ok",
     }  # fmt: skip
 
 
@@ -50,6 +54,7 @@ def test_model_larger_than_vram_warns_about_cpu_spill() -> None:
         client_returning(httpx.Response(200, json=TAGS)),
         smi("GTX 1650, 4096\n"),
         lambda n: None,
+        mirror=NO_MIRROR,
     )
     assert statuses(checks)["fit"] == "warn"
     assert "spill to CPU" in format_checks(checks)
@@ -58,7 +63,11 @@ def test_model_larger_than_vram_warns_about_cpu_spill() -> None:
 
 def test_missing_model_fails_with_pull_hint() -> None:
     checks = run_doctor(
-        "nope", client_returning(httpx.Response(200, json=TAGS)), no_smi, lambda n: None
+        "nope",
+        client_returning(httpx.Response(200, json=TAGS)),
+        no_smi,
+        lambda n: None,
+        mirror=NO_MIRROR,
     )
     text = format_checks(checks)
     assert statuses(checks)["model"] == "fail" and "ollama pull nope" in text
@@ -70,6 +79,18 @@ def test_ollama_down_fails_with_start_hint() -> None:
         raise httpx.ConnectError("refused")
 
     client = httpx.Client(transport=httpx.MockTransport(refuse), base_url=OLLAMA_URL)
-    checks = run_doctor("small", client, no_smi, lambda n: None)
+    checks = run_doctor("small", client, no_smi, lambda n: None, mirror=NO_MIRROR)
     assert statuses(checks)["ollama"] == "fail"
     assert "ollama serve" in format_checks(checks)
+
+
+def test_missing_terraform_mirror_warns_with_the_one_time_command() -> None:
+    checks = run_doctor(
+        "small",
+        client_returning(httpx.Response(200, json=TAGS)),
+        no_smi,
+        lambda n: "/bin/terraform",
+        mirror=NO_MIRROR,
+    )
+    assert statuses(checks)["tf-mirror"] == "warn"
+    assert "terraform providers mirror" in format_checks(checks)

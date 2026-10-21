@@ -94,7 +94,10 @@ class Component(BaseModel):
     reason: str  # shown in the plan, never empty
     serves: list[str]  # service ids
     evidence: list[Evidence] = []  # triggering facts; empty only for account-level pieces
-    items: list[str] = []  # extra detail the steps need: ports, health paths, secret names
+    items: list[
+        str
+    ] = []  # for humans and steps: "port:8000", "health:/x", "env:NAME", secret names
+    params: dict[str, str] = {}  # machine-readable sizing for templates (cpu, memory, engine...)
 
     @field_validator("reason")
     @classmethod

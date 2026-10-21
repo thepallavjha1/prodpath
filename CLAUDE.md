@@ -37,6 +37,7 @@ uv sync                                   # install
 uv run prodpath --help                    # CLI
 uv run pytest -q                          # fast tests (no model, no network)
 uv run pytest -m llm                      # slow tests that hit local Ollama
+uv run pytest -m tf                       # slow: real terraform validate via the local provider mirror
 uv run ruff check . && uv run ruff format --check .
 uv run mypy src
 ```

@@ -138,7 +138,12 @@ class Component(BaseModel):
     reason: str  # shown in the plan, never empty
     serves: list[str]  # service ids
     evidence: list[Evidence]  # facts that triggered it; empty only for account-level pieces
-    items: list[str]  # extra detail the steps need: ports, health paths, secret names
+    items: list[
+        str
+    ]  # extra detail for humans/steps: "port:8000", "health:/x", "env:NAME", secret names
+    params: dict[
+        str, str
+    ]  # machine-readable sizing for templates: cpu, memory, desired_count, engine...
 
 
 class Architecture(BaseModel):  # provider-specific output of "choose"
@@ -304,6 +309,7 @@ class Provider(Protocol):
     def forecast(self, arch: Architecture, usage: Usage) -> Forecast: ...
     def traps(self, arch: Architecture, usage: Usage) -> list[Trap]: ...
     def steps(self, arch: Architecture) -> list[Step]: ...
+    def iac_gaps(self, arch: Architecture) -> list[str]: ...  # components with no template yet
     def render_iac(self, arch: Architecture) -> dict[str, str]: ...  # filename -> content
 ```
 
@@ -342,7 +348,10 @@ Default component rules (tunable; rules are code, so they stay reviewable):
 
 ## 10. Rendering (`render.py`)
 
-- Terraform is rendered from templates, never written by the LLM. If `terraform` is installed, run `terraform fmt` and `terraform validate` (works offline with no credentials) and report the result.
+- Terraform is rendered from Jinja2 templates (`providers/aws/templates/*.tf.j2`), never written by the LLM. `providers/aws/iac.py` builds a plain context from the `Architecture` (component `params`, `items`, `serves`) and renders one `.tf` file per concern; empty files are skipped. Resource names derive from service ids (`tf_id`).
+- Checks live in `iac_check.py` and always run on the output: (1) a self-scan that fails the run if a file contains a 12-digit account id, an AWS key, a private key or a literal password; (2) `terraform fmt` (offline) is applied to the output directory when `terraform` is on PATH; (3) `terraform validate` runs in a temporary copy with `init -backend=false` against a local provider mirror at `~/.cache/prodpath/terraform-mirror` (`--tf-mirror` overrides). Without the mirror, validate is reported as "not run" with the one-time command to create it. The tool never downloads the provider itself.
+- Generated Terraform uses a partial S3 backend (no bucket or account details), required variables with no defaults for anything the tool cannot know (certificate, domain, image tags, GitHub repo, cron expressions), secret slots with no versions, `manage_master_user_password` for RDS, and encryption everywhere. `ignore_changes = [task_definition]` on services so CI deployments do not fight Terraform. Components without a template (App Runner, DocumentDB, DynamoDB, Amazon MQ, MSK, Memcached) are listed in PLAN.md under "Terraform coverage"; nothing is silently skipped.
+- `PLAN.md` structure: summary, architecture table (component, why, evidence), ordered steps with commands, risks, open questions.
 - `PLAN.md` structure: summary, architecture table (component, why, evidence), ordered steps with commands, risks, open questions.
 - `FORECAST.md` structure: assumptions table (with source column), cost table (low / expected / spike), traps ranked by impact.
 - Every generated file starts with a header: tool version, timestamp, input hash.
@@ -369,7 +378,7 @@ prodpath/
   docs/        ARCHITECTURE.md ROADMAP.md DECISIONS.md CODING_STANDARDS.md TESTING.md SECURITY.md
   .claude/commands/   wrapup.md adr.md
   src/prodpath/
-    cli.py  config.py  models.py  cache.py  redact.py  doctor.py
+    cli.py  config.py  models.py  cache.py  redact.py  doctor.py  iac_check.py
     scan.py  detect.py  extract.py  edges.py  llm.py  summarize.py  forecast.py  render.py
     facts/        python.py  javascript.py  docker.py  compose.py  manifests.py
     providers/

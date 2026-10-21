@@ -2,6 +2,7 @@ import re
 
 from prodpath.models import Architecture, Prefs, Service, Step, SystemModel
 from prodpath.providers.aws import AwsProvider
+from tests.helpers import kitchen_sink_system
 from tests.helpers import make_fact as f
 from tests.helpers import make_service as svc
 
@@ -22,26 +23,39 @@ API_FACTS = [
     f("object_store", "s3"),
 ]
 FULL = [svc("api", "web", API_FACTS), svc("job", "cron", [f("runtime", "python")])]
+APP_RUNNER = [svc("site", "web", [f("port", "8000")])]
 
 
 def step(steps: list[Step], step_id: str) -> Step:
     return next(s for s in steps if s.id == step_id)
 
 
-def test_steps_are_ordered_and_complete() -> None:
+def test_terraform_flow_is_ordered_and_complete() -> None:
     _, steps = plan_steps(FULL)
     ids = [s.id for s in steps]
     assert ids == [
-        "account", "state", "network", "data", "secrets", "images",
-        "services", "schedules", "cicd", "observability", "rollback", "verify",
+        "account", "state", "terraform", "secret-values", "images",
+        "cicd", "observability", "rollback", "verify",
     ]  # fmt: skip
-    assert ids.index("data") < ids.index("services")
-    assert ids.index("images") < ids.index("services")
+
+
+def test_images_come_after_terraform_and_secrets_are_filled_before_services_run() -> None:
+    _, steps = plan_steps(FULL)
+    ids = [s.id for s in steps]
+    assert ids.index("terraform") < ids.index("secret-values") < ids.index("images")
 
 
 def test_every_step_explains_and_verifies() -> None:
     _, steps = plan_steps(FULL)
     assert all(s.title and s.why and s.verify for s in steps)
+
+
+def test_terraform_step_matches_the_generated_backend_and_directory() -> None:
+    _, steps = plan_steps(FULL, "ap-south-1")
+    commands = "\n".join(step(steps, "terraform").commands)
+    assert "cd .prodpath/out/terraform" in commands
+    assert 'backend-config="region=ap-south-1"' in commands
+    assert "terraform plan -out=tfplan" in commands and "terraform apply tfplan" in commands
 
 
 def test_state_bucket_location_constraint_rules() -> None:
@@ -51,18 +65,13 @@ def test_state_bucket_location_constraint_rules() -> None:
     assert "LocationConstraint" not in step(virginia, "state").commands[0]
 
 
-def test_secret_commands_create_slots_without_values() -> None:
+def test_secret_values_are_read_from_files_never_inline() -> None:
     _, steps = plan_steps(FULL)
-    commands = step(steps, "secrets").commands
-    assert any("create-secret --name prod/api/DATABASE_URL" in c for c in commands)
-    assert not any("--secret-string" in c for c in commands)
-
-
-def test_service_step_uses_detected_port_and_health_path() -> None:
-    _, steps = plan_steps(FULL)
-    assert any(
-        "container port 8000" in c and "/health" in c for c in step(steps, "services").commands
-    )
+    commands = step(steps, "secret-values").commands
+    assert any("--secret-id prod/api/DATABASE_URL" in c for c in commands)
+    assert all("file://<" in c for c in commands)
+    assert not any("--secret-string " in c and "file://" not in c for c in commands)
+    assert "data_store_endpoints" in step(steps, "secret-values").why
 
 
 def test_no_account_ids_or_keys_in_any_command() -> None:
@@ -70,6 +79,23 @@ def test_no_account_ids_or_keys_in_any_command() -> None:
     text = "\n".join(c for s in steps for c in s.commands)
     assert not re.search(r"\b\d{12}\b", text) and "AKIA" not in text
     assert "<ACCOUNT_ID>" in text
+
+
+def test_components_without_templates_get_a_manual_step() -> None:
+    provider = AwsProvider()
+    arch = provider.choose(kitchen_sink_system(), Prefs())
+    steps = provider.steps(arch)
+    manual = step(steps, "manual")
+    assert [s.id for s in steps].index("manual") > [s.id for s in steps].index("images")
+    assert "documentdb" in " ".join(manual.commands)
+    assert "elasticache-memcached" in " ".join(manual.commands)
+
+
+def test_architecture_without_a_cluster_keeps_the_by_hand_steps() -> None:
+    _, steps = plan_steps(APP_RUNNER)
+    ids = [s.id for s in steps]
+    assert "terraform" not in ids and "services" in ids
+    assert any("apprunner create-service" in c for c in step(steps, "services").commands)
 
 
 def test_empty_architecture_has_no_steps() -> None:

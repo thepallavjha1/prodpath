@@ -11,7 +11,7 @@ Tests are how a vibe-coded project stays trustworthy. Write the test first, then
 | Pipeline | `prodpath run` on fixtures end to end | seconds | no (`FakeLLM`) |
 | LLM integration | Real Ollama on small fixtures; checks schema validity and evidence citation | slow | local Ollama only; marked `llm` |
 
-Default `pytest -q` runs everything except `-m llm`.
+Default `pytest -q` runs everything except `-m llm` and `-m tf`. `-m tf` runs real `terraform validate` against the local provider mirror (about 2.5 minutes); run it before finishing any change to `providers/aws/templates/` or `iac.py`.
 
 ## 2. Fixtures (`tests/fixtures/`)
 
@@ -30,7 +30,7 @@ Small synthetic repos, committed. Never real customer code.
 ## 4. Invariants (property-style tests that must always hold)
 
 1. Every `Fact` has at least one `Evidence`.
-2. No secret value appears in any output, log line, prompt or snippet (scan fixtures that deliberately contain fake secrets such as `AKIA...EXAMPLE` and `password=hunter2`).
+2. No secret value appears in any output, log line, prompt or snippet (scan fixtures that deliberately contain fake secrets such as `password=hunter2`, plus AWS-key-shaped strings built at runtime in tests (never literals: GitHub secret scanning flags them)).
 3. Every `CostLine` has a `price_ref` that exists in the price snapshot used by the test.
 4. Every forecast assumption renders with its source (`user`, `default` or `inferred`).
 5. Running a stage twice on unchanged input produces byte-identical output and, on the second run, does no re-extraction (cache hit counters).

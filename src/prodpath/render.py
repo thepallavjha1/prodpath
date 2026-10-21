@@ -7,6 +7,7 @@ timestamp, which the caller passes in so tests can pin it.
 import hashlib
 
 from prodpath import __version__
+from prodpath.iac_check import TerraformReport
 from prodpath.models import (
     Architecture,
     Component,
@@ -117,6 +118,31 @@ def _uncertainty_section(
     return "\n".join(lines)
 
 
+def _terraform_section(report: TerraformReport) -> str:
+    names = ", ".join(f"`{name}`" for name in report.files)
+    lines = [
+        f"{len(report.files)} files were written to `.prodpath/out/terraform/`: {names}.",
+        "",
+        "**Checks run by this tool**",
+        "",
+    ]
+    labels = {"ok": "passed", "fail": "FAILED", "skipped": "not run"}
+    for check in report.checks:
+        lines.append(f"- {check.name}: {labels[check.status]}: {check.detail}")
+    lines += ["", "**Terraform coverage**", ""]
+    if report.gaps:
+        lines.append("No template exists yet for these planned components (create them yourself):")
+        lines += [f"- {gap}" for gap in report.gaps]
+    else:
+        lines.append("Every planned component has a template.")
+    lines += [
+        "",
+        "`terraform validate` checks syntax and provider schema, not whether the design is right "
+        "or safe for your account. Read `terraform plan` before applying.",
+    ]
+    return "\n".join(lines)
+
+
 def render_plan(
     system: SystemModel,
     arch: Architecture,
@@ -124,6 +150,7 @@ def render_plan(
     prefs: Prefs,
     summaries: Summaries | None,
     generated_at: str,
+    terraform: TerraformReport | None = None,
 ) -> str:
     header = (
         f"<!-- prodpath {__version__} | generated {generated_at} | "
@@ -139,9 +166,9 @@ def render_plan(
         f"{len(arch.components)} components planned.",
         "## Services\n\n" + _services_section(system, arch, summaries),
         "## Architecture\n\n" + _architecture_section(arch),
-        "## Steps\n\nCommands use `<PLACEHOLDERS>` for values only you know. Terraform for these "
-        "resources is not generated yet, so these are the by-hand route.\n\n"
+        "## Steps\n\nCommands use `<PLACEHOLDERS>` for values only you know.\n\n"
         + _steps_section(steps),
+        *(["## Terraform\n\n" + _terraform_section(terraform)] if terraform else []),
         "## Risks\n\n" + _risks_section(arch, summaries),
         "## Unknowns and open questions\n\n" + "\n".join(f"- {q}" for q in open_questions),
         "## Not analyzed\n\n" + "\n".join(f"- {n}" for n in not_analyzed),

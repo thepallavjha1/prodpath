@@ -1,0 +1,26 @@
+{% if sqs %}
+resource "aws_sqs_queue" "dlq" {
+  name                      = "${local.name}-dlq"
+  sqs_managed_sse_enabled   = true
+  message_retention_seconds = 1209600
+}
+
+# Queue name and visibility timeout were not found in the code; adjust per consumer.
+resource "aws_sqs_queue" "main" {
+  name                       = "${local.name}-queue"
+  sqs_managed_sse_enabled    = true
+  visibility_timeout_seconds = 30
+
+  redrive_policy = jsonencode({
+    deadLetterTargetArn = aws_sqs_queue.dlq.arn
+    maxReceiveCount     = 5
+  })
+}
+{% endif %}
+{% if sns %}
+
+resource "aws_sns_topic" "main" {
+  name              = "${local.name}-topic"
+  kms_master_key_id = "alias/aws/sns"
+}
+{% endif %}

@@ -4,9 +4,11 @@ import shutil
 import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 
 import httpx
 
+from prodpath.iac_check import DEFAULT_MIRROR, MIRROR_COMMAND
 from prodpath.llm import OLLAMA_URL
 
 VRAM_FIT_RATIO = 0.85  # leave room for the KV cache and the desktop's own GPU use
@@ -57,6 +59,7 @@ def run_doctor(
     client: httpx.Client | None = None,
     run: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
     which: Callable[[str], str | None] = shutil.which,
+    mirror: Path = DEFAULT_MIRROR,
 ) -> list[Check]:
     client = client or httpx.Client(base_url=OLLAMA_URL, timeout=5.0)
     checks, model_bytes = _model_checks(client, model)
@@ -80,7 +83,18 @@ def run_doctor(
     if which("terraform"):
         checks.append(Check("terraform", "ok", "found on PATH"))
     else:
-        checks.append(Check("terraform", "warn", "not on PATH; needed for validation in Phase 5"))
+        checks.append(
+            Check(
+                "terraform", "warn", "not on PATH; fmt and validate of generated code are skipped"
+            )
+        )
+    if mirror.is_dir():
+        checks.append(Check("tf-mirror", "ok", f"provider mirror found at {mirror}"))
+    else:
+        detail = f"no provider mirror at {mirror}; validate is skipped. " + MIRROR_COMMAND.format(
+            mirror=mirror
+        )
+        checks.append(Check("tf-mirror", "warn", detail))
     return checks
 
 

@@ -277,6 +277,10 @@ def rule_cache_and_queues(ctx: Context) -> list[Component]:
     for service, facts in redis_users:
         by_id.setdefault(service.id, (service, []))[1].extend(facts)
     if by_id:
+        ctx.unknowns.append(
+            "Redis: in-transit encryption is on, so clients must connect with TLS (rediss://); "
+            "check each service's Redis client settings."
+        )
         node = "2 nodes, Multi-AZ" if ctx.is_prod else "1 node"
         components.append(
             _component(
@@ -392,6 +396,33 @@ def rule_storage_and_secrets(ctx: Context) -> list[Component]:
     return components
 
 
+def _fill_params(ctx: Context, components: list[Component]) -> None:
+    """Machine-readable sizing for the Terraform templates; defaults, not measurements."""
+    by_id = {s.id: s for s in ctx.deployable}
+    desired = "2" if ctx.is_prod else "1"
+    for c in components:
+        if c.type in {"ecs-service-web", "ecs-service-worker", "scheduled-task"}:
+            web = c.type == "ecs-service-web"
+            c.params = {
+                "cpu": "512" if web else "256",
+                "memory": "1024" if web else "512",
+                "desired_count": "1" if c.type == "scheduled-task" else desired,
+            }
+            names = {f.value for f in _facts(by_id[c.serves[0]], "env_var")}
+            c.items += [f"env:{n}" for n in sorted(names) if not SECRET_NAME.search(n)]
+        elif c.type == "rds":
+            c.params = {
+                "engine": c.name.removeprefix("rds-"),
+                "instance_class": "db.t4g.small" if ctx.is_prod else "db.t4g.micro",
+                "allocated_storage": "20",
+                "multi_az": "true" if ctx.is_prod else "false",
+            }
+        elif c.name == "elasticache-redis":
+            c.params = {"node_type": "cache.t4g.micro", "num_cache_clusters": desired}
+        elif c.type == "log-group":
+            c.params = {"retention_days": "30"}
+
+
 RULES: list[Rule] = [
     rule_foundation,
     rule_compute,
@@ -426,6 +457,7 @@ def choose_architecture(system: SystemModel, prefs: Prefs) -> Architecture:
         ctx.unknowns.append(
             "No deployable services with facts were found; there is nothing to plan."
         )
+    _fill_params(ctx, components)
     order = {t: i for i, t in enumerate(TYPE_ORDER)}
     components.sort(key=lambda c: (order.get(c.type, len(order)), c.name))
     return Architecture(

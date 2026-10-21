@@ -62,9 +62,9 @@ Do not start the next phase "while you're here". If a task belongs to a later ph
 
 **Goal:** valid, readable Terraform from templates.
 
-- [ ] Templates for VPC, ECR, ECS cluster/service, ALB, RDS, ElastiCache, SQS, S3, Secrets slots, IAM (least privilege), CloudWatch log groups with retention, GitHub OIDC role
-- [ ] `terraform fmt` and `terraform validate` run when available, results reported
-- [ ] Golden tests per template
+- [x] Templates for VPC, ECR, ECS cluster/service, ALB, RDS, ElastiCache, SQS, S3, Secrets slots, IAM (least privilege), CloudWatch log groups with retention, GitHub OIDC role
+- [x] `terraform fmt` and `terraform validate` run when available, results reported
+- [x] Golden tests per template
 
 **Exit:** `terraform validate` passes for generated code on all fixtures; no secret values or account IDs hard-coded; variables documented.
 

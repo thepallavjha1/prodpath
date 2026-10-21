@@ -11,7 +11,8 @@
       "reason": "Remote state with locking keeps Terraform safe once more than one person or pipeline applies changes (SECURITY.md section 5).",
       "serves": [],
       "evidence": [],
-      "items": []
+      "items": [],
+      "params": {}
     },
     {
       "type": "iam-github-oidc",
@@ -23,7 +24,8 @@
         "worker"
       ],
       "evidence": [],
-      "items": []
+      "items": [],
+      "params": {}
     },
     {
       "type": "vpc",
@@ -46,7 +48,8 @@
           "snippet": "celery[redis]"
         }
       ],
-      "items": []
+      "items": [],
+      "params": {}
     },
     {
       "type": "ecs-cluster",
@@ -69,7 +72,8 @@
           "snippet": "celery[redis]"
         }
       ],
-      "items": []
+      "items": [],
+      "params": {}
     },
     {
       "type": "alb",
@@ -86,7 +90,8 @@
           "snippet": "EXPOSE 8000"
         }
       ],
-      "items": []
+      "items": [],
+      "params": {}
     },
     {
       "type": "ecr",
@@ -103,7 +108,8 @@
           "snippet": "EXPOSE 8000"
         }
       ],
-      "items": []
+      "items": [],
+      "params": {}
     },
     {
       "type": "ecr",
@@ -120,7 +126,8 @@
           "snippet": "celery[redis]"
         }
       ],
-      "items": []
+      "items": [],
+      "params": {}
     },
     {
       "type": "elasticache",
@@ -143,7 +150,11 @@
           "snippet": "redis: image redis:7"
         }
       ],
-      "items": []
+      "items": [],
+      "params": {
+        "node_type": "cache.t4g.micro",
+        "num_cache_clusters": "2"
+      }
     },
     {
       "type": "secrets",
@@ -162,7 +173,8 @@
       ],
       "items": [
         "REDIS_URL"
-      ]
+      ],
+      "params": {}
     },
     {
       "type": "secrets",
@@ -181,7 +193,8 @@
       ],
       "items": [
         "REDIS_URL"
-      ]
+      ],
+      "params": {}
     },
     {
       "type": "log-group",
@@ -198,7 +211,10 @@
           "snippet": "EXPOSE 8000"
         }
       ],
-      "items": []
+      "items": [],
+      "params": {
+        "retention_days": "30"
+      }
     },
     {
       "type": "log-group",
@@ -215,7 +231,10 @@
           "snippet": "celery[redis]"
         }
       ],
-      "items": []
+      "items": [],
+      "params": {
+        "retention_days": "30"
+      }
     },
     {
       "type": "iam-task-role",
@@ -232,7 +251,8 @@
           "snippet": "EXPOSE 8000"
         }
       ],
-      "items": []
+      "items": [],
+      "params": {}
     },
     {
       "type": "iam-task-role",
@@ -249,7 +269,8 @@
           "snippet": "celery[redis]"
         }
       ],
-      "items": []
+      "items": [],
+      "params": {}
     },
     {
       "type": "ecs-service-web",
@@ -268,7 +289,12 @@
       ],
       "items": [
         "port:8000"
-      ]
+      ],
+      "params": {
+        "cpu": "512",
+        "memory": "1024",
+        "desired_count": "2"
+      }
     },
     {
       "type": "ecs-service-worker",
@@ -285,11 +311,17 @@
           "snippet": "celery[redis]"
         }
       ],
-      "items": []
+      "items": [],
+      "params": {
+        "cpu": "256",
+        "memory": "512",
+        "desired_count": "2"
+      }
     }
   ],
   "unknowns": [
     "Domain name and ACM certificate are needed for HTTPS on the load balancer.",
+    "Redis: in-transit encryption is on, so clients must connect with TLS (rediss://); check each service's Redis client settings.",
     "Traffic and data volume are unknown: all sizing is a default starting point."
   ]
 }

@@ -1,0 +1,21 @@
+# Copy to terraform.tfvars and fill in the <PLACEHOLDERS>. Never commit real secrets here.
+app_name = "<APP_NAME>"
+
+# Git SHA of the image to run for each service (build and push first, see README.md).
+image_tags = {
+  "apps-billing" = "<GIT_SHA>"
+  "apps-gateway" = "<GIT_SHA>"
+  "apps-notifier" = "<GIT_SHA>"
+  "apps-reports" = "<GIT_SHA>"
+  "apps-users" = "<GIT_SHA>"
+  "apps-web" = "<GIT_SHA>"
+}
+
+certificate_arn = "<ACM_CERTIFICATE_ARN>"
+domain_name     = "<YOUR_DOMAIN>"
+
+schedule_expressions = {
+  "apps-reports" = "cron(0 2 * * ? *)" # example only: replace with the real schedule
+}
+
+github_repo = "<ORG>/<REPO>"

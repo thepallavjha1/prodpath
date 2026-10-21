@@ -1,0 +1,64 @@
+{% for s in cron_services %}
+data "aws_iam_policy_document" "scheduler_assume_{{ s.tf }}" {
+  statement {
+    actions = ["sts:AssumeRole"]
+
+    principals {
+      type        = "Service"
+      identifiers = ["scheduler.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_role" "{{ s.tf }}_scheduler" {
+  name               = "${local.name}-{{ s.id }}-scheduler"
+  assume_role_policy = data.aws_iam_policy_document.scheduler_assume_{{ s.tf }}.json
+}
+
+resource "aws_iam_role_policy" "{{ s.tf }}_scheduler" {
+  name = "run-own-task"
+  role = aws_iam_role.{{ s.tf }}_scheduler.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["ecs:RunTask"]
+        Resource = ["${aws_ecs_task_definition.{{ s.tf }}.arn_without_revision}:*"]
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["iam:PassRole"]
+        Resource = [aws_iam_role.{{ s.tf }}_execution.arn, aws_iam_role.{{ s.tf }}_task.arn]
+      }
+    ]
+  })
+}
+
+resource "aws_scheduler_schedule" "{{ s.tf }}" {
+  name                = "${local.name}-{{ s.id }}"
+  schedule_expression = var.schedule_expressions["{{ s.id }}"]
+
+  flexible_time_window {
+    mode = "OFF"
+  }
+
+  target {
+    arn      = aws_ecs_cluster.main.arn
+    role_arn = aws_iam_role.{{ s.tf }}_scheduler.arn
+
+    ecs_parameters {
+      task_definition_arn = aws_ecs_task_definition.{{ s.tf }}.arn
+      launch_type         = "FARGATE"
+
+      network_configuration {
+        subnets          = aws_subnet.private[*].id
+        security_groups  = [aws_security_group.{{ s.tf }}.id]
+        assign_public_ip = false
+      }
+    }
+  }
+}
+
+{% endfor %}

@@ -1,0 +1,47 @@
+"""terraform validate on every fixture's generated code, offline against the local mirror.
+
+Skipped (with a reason) when terraform or the provider mirror is missing. Create the mirror once
+with `terraform providers mirror ~/.cache/prodpath/terraform-mirror` (see `prodpath doctor`).
+"""
+
+import shutil
+from pathlib import Path
+
+import pytest
+
+from prodpath.iac_check import DEFAULT_MIRROR, format_files, validate_files
+from prodpath.models import Prefs
+from prodpath.providers.aws import AwsProvider
+from tests.helpers import build_system, kitchen_sink_system
+
+TERRAFORM = shutil.which("terraform")
+pytestmark = [
+    pytest.mark.tf,  # slow: opt in with `pytest -m tf`
+    pytest.mark.skipif(
+        TERRAFORM is None or not DEFAULT_MIRROR.is_dir(),
+        reason="needs terraform and the local provider mirror",
+    ),
+]
+
+
+@pytest.mark.parametrize("name", ["mono_a", "mono_b", "mono_c"])
+def test_fixture_terraform_validates(name: str, fixtures_dir: Path, tmp_path: Path) -> None:
+    assert TERRAFORM
+    provider = AwsProvider()
+    arch = provider.choose(
+        build_system(fixtures_dir / name, tmp_path),
+        Prefs(),
+    )
+    files = format_files(provider.render_iac(arch), TERRAFORM)
+    result = validate_files(files, TERRAFORM, DEFAULT_MIRROR, tmp_path / "work")
+    assert (result.status, result.detail) == ("ok", "configuration is valid")
+
+
+@pytest.mark.parametrize("env", ["prod", "nonprod"])
+def test_kitchen_sink_terraform_validates(env: str, tmp_path: Path) -> None:
+    assert TERRAFORM
+    provider = AwsProvider()
+    arch = provider.choose(kitchen_sink_system(), Prefs(environment=env))  # type: ignore[arg-type]
+    files = format_files(provider.render_iac(arch), TERRAFORM)
+    result = validate_files(files, TERRAFORM, DEFAULT_MIRROR, tmp_path)
+    assert (result.status, result.detail) == ("ok", "configuration is valid")

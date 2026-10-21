@@ -1,11 +1,13 @@
 """Architecture -> ordered deployment steps with AWS CLI commands.
 
 Commands are templates with <PLACEHOLDERS> for things only the user knows (account id,
-bucket names, profile). The tool never sees credentials or account ids. Terraform arrives in
-Phase 5; until then these commands are the by-hand route and the checklist of what to create.
+bucket names, profile). The tool never sees credentials or account ids. When the architecture
+has an ECS cluster, Terraform (providers/aws/iac.py) creates most resources and these steps
+wrap it; otherwise (e.g. a lone App Runner service) they are the by-hand route.
 """
 
 from prodpath.models import Architecture, Component, Step
+from prodpath.providers.aws.iac import GENERATED_TYPES, iac_gaps
 
 Builder = list[Step]
 
@@ -337,11 +339,159 @@ def _verify_step(arch: Architecture) -> Step:
     )
 
 
+TF_DIR = ".prodpath/out/terraform"
+
+
+def _terraform_step(arch: Architecture) -> Step:
+    generated = [c for c in arch.components if c.type in GENERATED_TYPES - {"tf-state"}]
+    backend = (
+        'terraform init -backend-config="bucket=<STATE_BUCKET>" '
+        f'-backend-config="key=<APP_NAME>/{arch.environment}/terraform.tfstate" '
+        f'-backend-config="region={arch.region}" '
+        '-backend-config="dynamodb_table=<LOCK_TABLE>" -backend-config="encrypt=true"'
+    )
+    return Step(
+        id="terraform",
+        title="Review and apply the generated Terraform",
+        why="One reviewed plan creates the network, load balancer, data stores, repositories, "
+        "roles, secret slots and services together. Read the plan before applying; this tool "
+        "has not touched your account.",
+        commands=[
+            f"cd {TF_DIR}",
+            "cp terraform.tfvars.example terraform.tfvars   # then fill in every <PLACEHOLDER>",
+            backend,
+            "terraform plan -out=tfplan",
+            "terraform apply tfplan",
+        ],
+        verify="`terraform plan` shows only what you expect; `terraform output` lists ECR "
+        "repository URLs, secret slots and data store endpoints.",
+        components=_names(generated),
+    )
+
+
+def _secret_values_step(arch: Architecture) -> Step | None:
+    secrets = _of_type(arch, "secrets")
+    if not secrets:
+        return None
+    commands = [
+        f"aws secretsmanager put-secret-value --secret-id {arch.environment}/{c.serves[0]}/{name} "
+        "--secret-string file://<PATH_TO_FILE_HOLDING_THE_VALUE>"
+        for c in secrets
+        for name in c.items
+    ]
+    hint = ""
+    if _of_type(arch, "rds"):
+        hint = (
+            " Database URLs: use the host from `terraform output data_store_endpoints` and the "
+            "master credentials from `rds_master_secret_arns`, ideally a separate user per service."
+        )
+    return Step(
+        id="secret-values",
+        title="Fill the secret slots yourself",
+        why="The slots exist but are empty: this tool only knows variable names, never values. "
+        "Read values from a file, not the command line, so they stay out of shell history." + hint,
+        commands=commands,
+        verify="aws secretsmanager list-secrets shows every slot; none hold placeholder text.",
+        components=_names(secrets),
+    )
+
+
+def _push_images_step(arch: Architecture) -> Step | None:
+    repos = _of_type(arch, "ecr")
+    if not repos:
+        return None
+    commands = [
+        f"aws ecr get-login-password --region {arch.region} | docker login --username AWS "
+        f"--password-stdin <ACCOUNT_ID>.dkr.ecr.{arch.region}.amazonaws.com"
+    ]
+    for c in repos:
+        label = c.serves[0].upper().replace("-", "_")
+        url = f"<ECR_URL_FOR_{label}>"
+        commands += [
+            f"docker build -t {url}:<GIT_SHA> <PATH_TO_{label}>",
+            f"docker push {url}:<GIT_SHA>",
+        ]
+    for c in _of_type(arch, "ecs-service-web", "ecs-service-worker"):
+        commands.append(
+            "aws ecs update-service --cluster <CLUSTER_NAME> "
+            f"--service {c.serves[0]} --force-new-deployment"
+        )
+    return Step(
+        id="images",
+        title="Build and push the first images",
+        why="Services stay pending until their image tag exists in ECR. Tag with the git SHA "
+        "(repositories are immutable, so 'latest' cannot be reused).",
+        commands=commands,
+        verify="aws ecr describe-images lists the tag; services reach steady state.",
+        components=[],
+    )
+
+
+def _gaps_step(arch: Architecture) -> Step | None:
+    gaps = iac_gaps(arch)
+    if not gaps:
+        return None
+    return Step(
+        id="manual",
+        title="Create what Terraform does not cover yet",
+        why="These components have no template in this version. They are part of the plan, so "
+        "create them by hand or with your own IaC before the services that need them.",
+        commands=[f"# {gap}: see its row in the architecture table" for gap in gaps],
+        verify="Each listed component exists and the services can reach it.",
+        components=[g.split(" (")[0] for g in gaps],
+    )
+
+
+def _cicd_terraform_step(arch: Architecture) -> Step | None:
+    if not _of_type(arch, "iam-github-oidc"):
+        return None
+    return Step(
+        id="cicd",
+        title="Wire GitHub Actions to the deploy role",
+        why="Terraform created a role that only your repository and branch can assume through "
+        "OIDC, so no AWS keys are stored in GitHub.",
+        commands=[
+            "# In your workflow: permissions: { id-token: write, contents: read }",
+            "# uses: aws-actions/configure-aws-credentials with "
+            "role-to-assume: <terraform output github_actions_role_arn>",
+            "# Then: build, push the image tagged with the git SHA, register a new task "
+            "definition revision, aws ecs update-service",
+        ],
+        verify="A workflow run on the allowed branch assumes the role and deploys; "
+        "other branches are denied.",
+        components=[],
+    )
+
+
+def _alarms_step(arch: Architecture) -> Step | None:
+    if not _of_type(arch, "log-group"):
+        return None
+    return Step(
+        id="observability",
+        title="Add alarms (not generated yet)",
+        why="Log groups and their retention come from Terraform. Alarms are not generated in this "
+        "version; without them nobody is told when something breaks.",
+        commands=[
+            "# Suggested minimum: ALB 5xx rate and unhealthy host count, ECS service CPU and "
+            "memory, RDS CPU, free storage and connections, and an SNS topic or chat webhook",
+        ],
+        verify="Trigger a test alarm and confirm you receive the notification.",
+        components=[],
+    )
+
+
 def build_steps(arch: Architecture) -> Builder:
-    builders = [
-        _account_step, _state_step, _network_step, _data_step, _secrets_step, _images_step,
-        _services_step, _cron_step, _cicd_step, _observability_step, _rollback_step, _verify_step,
-    ]  # fmt: skip
     if not arch.components:
         return []
+    if _of_type(arch, "ecs-cluster"):  # Terraform covers this architecture
+        builders = [
+            _account_step, _state_step, _terraform_step, _secret_values_step, _push_images_step,
+            _gaps_step, _cicd_terraform_step, _alarms_step, _rollback_step, _verify_step,
+        ]  # fmt: skip
+    else:  # e.g. a lone App Runner service: by-hand commands, no Terraform templates
+        builders = [
+            _account_step, _state_step, _network_step, _data_step, _secrets_step, _images_step,
+            _services_step, _cron_step, _cicd_step, _observability_step, _rollback_step,
+            _verify_step,
+        ]  # fmt: skip
     return [step for build in builders if (step := build(arch)) is not None]
