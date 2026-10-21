@@ -1,0 +1,106 @@
+[
+  {
+    "certainty": "parsed",
+    "evidence": [
+      {
+        "line": 3,
+        "path": "apps/billing/Dockerfile",
+        "snippet": "EXPOSE 8000"
+      }
+    ],
+    "id": "apps-billing",
+    "kind": "web",
+    "root": "apps/billing"
+  },
+  {
+    "certainty": "parsed",
+    "evidence": [
+      {
+        "line": 3,
+        "path": "apps/gateway/Dockerfile",
+        "snippet": "EXPOSE 3000"
+      }
+    ],
+    "id": "apps-gateway",
+    "kind": "web",
+    "root": "apps/gateway"
+  },
+  {
+    "certainty": "parsed",
+    "evidence": [
+      {
+        "line": 3,
+        "path": "apps/notifier/Dockerfile",
+        "snippet": "EXPOSE 3000"
+      }
+    ],
+    "id": "apps-notifier",
+    "kind": "web",
+    "root": "apps/notifier"
+  },
+  {
+    "certainty": "parsed",
+    "evidence": [
+      {
+        "line": 1,
+        "path": "apps/reports/Dockerfile",
+        "snippet": "FROM python:3.12-slim"
+      }
+    ],
+    "id": "apps-reports",
+    "kind": "cron",
+    "root": "apps/reports"
+  },
+  {
+    "certainty": "parsed",
+    "evidence": [
+      {
+        "line": 3,
+        "path": "apps/users/Dockerfile",
+        "snippet": "EXPOSE 8000"
+      }
+    ],
+    "id": "apps-users",
+    "kind": "web",
+    "root": "apps/users"
+  },
+  {
+    "certainty": "parsed",
+    "evidence": [
+      {
+        "line": 3,
+        "path": "apps/web/Dockerfile",
+        "snippet": "EXPOSE 3000"
+      }
+    ],
+    "id": "apps-web",
+    "kind": "web",
+    "root": "apps/web"
+  },
+  {
+    "certainty": "heuristic",
+    "evidence": [
+      {
+        "line": 2,
+        "path": "packages/py-common/pyproject.toml",
+        "snippet": "name = \"py-common\""
+      }
+    ],
+    "id": "packages-py-common",
+    "kind": "lib",
+    "root": "packages/py-common"
+  },
+  {
+    "certainty": "heuristic",
+    "evidence": [
+      {
+        "line": 1,
+        "path": "pnpm-workspace.yaml",
+        "snippet": "packages:"
+      }
+    ],
+    "id": "packages-shared-utils",
+    "kind": "lib",
+    "root": "packages/shared-utils"
+  }
+]

@@ -1,0 +1,15 @@
+[
+  {
+    "certainty": "parsed",
+    "evidence": [
+      {
+        "line": 5,
+        "path": "Dockerfile",
+        "snippet": "EXPOSE 8000"
+      }
+    ],
+    "id": "root",
+    "kind": "web",
+    "root": "."
+  }
+]

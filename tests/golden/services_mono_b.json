@@ -1,0 +1,28 @@
+[
+  {
+    "certainty": "parsed",
+    "evidence": [
+      {
+        "line": 2,
+        "path": "docker-compose.yml",
+        "snippet": "api:"
+      }
+    ],
+    "id": "api",
+    "kind": "web",
+    "root": "api"
+  },
+  {
+    "certainty": "parsed",
+    "evidence": [
+      {
+        "line": 7,
+        "path": "docker-compose.yml",
+        "snippet": "worker:"
+      }
+    ],
+    "id": "worker",
+    "kind": "worker",
+    "root": "worker"
+  }
+]

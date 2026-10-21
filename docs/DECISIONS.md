@@ -1,0 +1,71 @@
+# DECISIONS.md
+
+Architecture decision records (ADRs). Append-only: never rewrite history. To change a decision, add a new ADR that supersedes the old one and mark the old one `Superseded by ADR-NNN`.
+Add an ADR for any new dependency, new top-level module, changed data contract, or change to a hard constraint in `CLAUDE.md`. Use `/adr <title>` to scaffold one.
+
+Format: **Status** | **Context** | **Decision** | **Consequences**.
+
+---
+
+## ADR-001: Advisor only, no cloud account access
+- **Status:** Accepted (2026-10-21), chosen by the user
+- **Context:** The user hesitates and double-checks when deploying. A tool with write access to a cloud account is a liability if it is wrong, and needs a much larger safety design.
+- **Decision:** The tool reads code and writes a plan, Terraform and a forecast. It never holds credentials and never calls a cloud API except the public price list download.
+- **Consequences:** Safe to adopt immediately. Calibration uses a manually exported cost CSV. Applying the Terraform is the user's job.
+
+## ADR-002: CLI run inside the target repo
+- **Status:** Accepted (2026-10-21), chosen by the user
+- **Decision:** One CLI, `prodpath`, run in the repo. Output goes to `.prodpath/`.
+- **Consequences:** No server, no auth, no UI. Wrappers (GitHub App, MCP server) are possible later.
+
+## ADR-003: Python 3.12, managed with uv
+- **Status:** Accepted (2026-10-21), language chosen by the user; `uv` and layout chosen by Claude
+- **Decision:** `pyproject.toml` + `uv`, src layout, argparse for the CLI, stdlib first.
+- **Consequences:** Minimal dependencies (pydantic, httpx, jinja2, tree-sitter). New dependencies need an ADR.
+
+## ADR-004: Local LLM only, via Ollama
+- **Status:** Accepted (2026-10-21), chosen by the user
+- **Context:** The tool reads proprietary code. The user wants it to never leave the machine. Hardware is a laptop GPU (specs unconfirmed).
+- **Decision:** All LLM calls go to Ollama on localhost with schema-constrained output. A `FakeLLM` is used in tests.
+- **Consequences:** Weaker model, small context. Mitigated by ADR-006. Tests assert no non-localhost network access.
+
+## ADR-005: AWS first, behind a Provider interface
+- **Status:** Accepted (2026-10-21), chosen by the user
+- **Decision:** v1 supports AWS only. Everything cloud-specific lives in `providers/aws/`; stages 1 to 4 are cloud-neutral.
+- **Consequences:** Adding another cloud means implementing `Provider`. If it forces edits to stages 1 to 4, the abstraction leaked and must be fixed.
+
+## ADR-006: Deterministic first, LLM explains
+- **Status:** Accepted (2026-10-21), chosen by Claude as the design principle
+- **Context:** Small local models hallucinate; prices and infrastructure must be correct.
+- **Decision:** Parsing, rules, pricing and Terraform come from code and templates. The LLM writes summaries and explanations from structured inputs and must cite evidence.
+- **Consequences:** More code than a prompt-only agent, but results are checkable and reproducible.
+
+## ADR-007: Terraform as the IaC format
+- **Status:** Accepted (2026-10-21). The user had no preference ("whatever is good and easy to use"); Claude chose the default.
+- **Context:** Terraform is widely used, readable, and not tied to one language or cloud.
+- **Decision:** Generate Terraform from Jinja2 templates; validate with `terraform validate` when available.
+- **Consequences:** Revisit if template maintenance becomes painful or the user prefers CDK/Pulumi.
+
+## ADR-008: Design for a large monorepo from day one
+- **Status:** Accepted (2026-10-21), driven by the user's first test target
+- **Decision:** Service detection comes before analysis; extraction is per service; results are cached by content hash; LLM inputs are bounded and map-reduced.
+- **Consequences:** More upfront work in Phases 1 and 2, but avoids a rewrite when the first real repo is large.
+
+## ADR-009: Every fact carries evidence
+- **Status:** Accepted (2026-10-21), chosen by Claude
+- **Decision:** `Fact` requires at least one `Evidence` (path, line, short snippet). Heuristic facts are labelled.
+- **Consequences:** Plans are auditable, and the LLM can be constrained to cite evidence ids. Snippets must never contain secret values.
+
+## ADR-010: Inventory and candidate contracts, PyYAML dependency
+- **Status:** Accepted (2026-10-21), chosen by Claude; PyYAML flagged to the user
+- **Context:** Phase 1 needs stage 1-2 data contracts (ARCHITECTURE section 4 named them but section 5 did not define them) and must read docker-compose and Kubernetes manifests, which are YAML. The stdlib has no YAML parser; hand-parsing compose is fragile.
+- **Decision:** Add `FileEntry`, `Inventory`, `ServiceCandidate` to `models.py`. Add the `pyyaml` dependency (`yaml.safe_load` only). Add `types-PyYAML` as a dev dependency for mypy.
+- **Consequences:** One small, very widely used dependency. Also serves Phase 2 (`facts/compose.py`, manifests). Line numbers for evidence are found by text search because `safe_load` drops them.
+
+## ADR-011: Phase 2 modules and SystemModel.not_analyzed
+- **Status:** Accepted (2026-10-21), chosen by Claude
+- **Context:** Phase 2 needs a stage-3 orchestrator, edge derivation and the secret redactor mandated by SECURITY.md section 3. ARCHITECTURE section 13 requires a visible "Not analyzed" list but no contract carried it.
+- **Decision:** Add top-level modules `extract.py` (stage 3), `edges.py` (edges and shared infra) and `redact.py` (snippet redaction). Add `not_analyzed: list[str]` to `SystemModel`. Add CLI command `prodpath facts`. No new third-party dependency.
+- **Consequences:** Stage 3 output is `SystemModel` as designed. Redaction is centralised so every snippet path shares it.
+
+<!-- Add new ADRs below. Next number: ADR-012 -->
