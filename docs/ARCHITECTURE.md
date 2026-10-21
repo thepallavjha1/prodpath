@@ -178,6 +178,20 @@ class CostLine(BaseModel):
     usd_spike: float
 
 
+class Forecast(BaseModel):  # stage 6 output
+    schema_version: int
+    provider: str
+    region: str
+    lines: list[CostLine]
+    total_low: float
+    total_expected: float
+    total_spike: float
+    assumptions: list[UsageAssumption]  # only those actually used, each with its source
+    not_priced: list[str]  # planned components or dimensions with no price in the snapshot
+    not_included: list[str]  # costs deliberately outside the model
+    price_snapshot: str  # region, fetch date and offer versions
+
+
 class Trap(BaseModel):
     id: str
     severity: Literal["high", "medium", "low"]
@@ -339,12 +353,16 @@ Default component rules (tunable; rules are code, so they stay reviewable):
 
 ## 9. Forecast engine (`forecast.py` + provider pricing)
 
-1. **Usage model.** A scenario of average and peak requests per second, payload sizes, stored data, and retention. Defaults exist but are always labelled `default`. The user overrides with `--usage usage.toml`.
-2. **Coefficients from code.** Static analysis extracts per-request multipliers as `inferred` assumptions with evidence: SDK calls per handler, log statements per request, retries configured, cross-service calls per request.
-3. **Pricing.** Local snapshot of the AWS Price List per service and region in `~/.cache/prodpath/prices/`. Every `CostLine` stores its `price_ref`.
-4. **Ranges.** v1: three deterministic scenarios (low, expected, spike) by scaling the traffic scenario. Monte Carlo is a later phase.
-5. **Traps.** Seed registry: NAT gateway data processing, cross-AZ traffic, CloudWatch log ingestion without retention, public IPv4 addresses, one load balancer per service, S3 list/put volume in loops, Lambda retry loops, oversized ElastiCache, Multi-AZ RDS in non-prod. Each trap states its fix and estimated monthly impact when computable.
+Implemented in Phase 6 (ADR-016). Contracts added to `models.py`: `Forecast` (lines, totals per scenario, assumptions, `not_priced`, `not_included`, snapshot description).
+
+1. **Usage model.** `forecast.py` holds the neutral machinery: named assumptions with defaults (`avg_requests_per_second`, `response_kb`, `log_kb_per_request`, `scenario_low`, `scenario_spike`, ...), `usage.toml` overrides (top-level keys, and `[service."<id>"]` tables for per-service values; unknown keys are an error), and scenario scaling. Every assumption used is recorded with its `source` (`user`, `default` or `inferred`) and rendered in FORECAST.md. Always-free allowances (free tiers) are not applied, so figures lean conservative.
+2. **Coefficients from code.** Inferred assumptions come from facts already extracted: HTTP edges between services (each edge adds one internal request through the load balancer per request), the number of secret slots, task counts and sizes from the architecture. Per-request log volume and S3/SQS operation ratios are not in the code analysis yet; they are labelled defaults.
+3. **Pricing.** `providers/aws/pricing.py`. `prodpath prices update --region R` is the only networked command: it downloads the public AWS Price List offer files (AmazonECS, AWSELB, AmazonVPC, AmazonRDS, AmazonElastiCache, AmazonCloudWatch, AmazonS3, AWSQueueService, AWSSecretsManager, AmazonECR, AWSDataTransfer) from `pricing.us-east-1.amazonaws.com`, extracts the on-demand first-tier price of each dimension we model and writes one compact snapshot `~/.cache/prodpath/prices/<region>.json`. Every `CostLine` stores a `price_ref` of the form `<offer>/<sku>/<rateCode>` that exists in the snapshot. Dimensions with no price in the snapshot are listed under `not_priced`, never guessed. NAT gateway pricing sits in the 300 MB EC2 offer and is not downloaded; NAT is therefore never priced (the default Terraform has no NAT).
+4. **Ranges.** Three deterministic scenarios (low, expected, spike) scale traffic-driven quantities (requests, log ingest, data transfer, LCU-hours, queue and object operations); always-on resources (tasks, load balancer hours, databases, caches, endpoints) are constant because nothing here autoscales. Month = 730 hours (the AWS convention). Monte Carlo is a later phase.
+5. **Traps.** `providers/aws/traps.py` is a registry: each trap is one function from a context (architecture, system, forecast) to an optional `Trap` with severity, where, why, fix and an estimated monthly impact computed from the forecast when possible. Seed set: no outbound path (NAT) for services that call out or each other, interface VPC endpoint fixed cost, CloudWatch log ingestion, public IPv4 addresses, data transfer out, no autoscaling under spike, ElastiCache replica cost, Multi-AZ RDS in non-prod, Container Insights metrics, cross-AZ traffic. Each has a test where it fires and one where it must not. Traps are ranked by severity, then estimated monthly impact (an unpriced high-severity trap still comes first).
 6. **Calibration** (Phase 7). `prodpath calibrate costs.csv` compares prediction with a manually exported actual-cost CSV and records the error per dimension. This dataset is the long-term moat.
+
+Not included in any forecast (stated in FORECAST.md): NAT gateway, KMS, Route 53, ACM, WAF, cross-AZ and inter-service transfer, image-pull traffic through endpoints, RDS backup storage beyond the free allowance, CloudWatch metrics and alarms, Container Insights metrics, taxes and support plans.
 
 ## 10. Rendering (`render.py`)
 

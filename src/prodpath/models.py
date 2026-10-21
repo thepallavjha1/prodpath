@@ -216,3 +216,17 @@ class Summaries(BaseModel):  # .prodpath/summaries.json
     model: str
     services: list[ServiceSummary]
     system: SystemSummary
+
+
+class Forecast(BaseModel):  # stage 6 output
+    schema_version: int = SCHEMA_VERSION
+    provider: str
+    region: str
+    lines: list[CostLine]
+    total_low: float
+    total_expected: float
+    total_spike: float
+    assumptions: list[UsageAssumption]  # only those actually used, each with its source
+    not_priced: list[str]  # planned components or dimensions with no price in the snapshot
+    not_included: list[str]  # costs deliberately outside the model
+    price_snapshot: str  # region, fetch date and offer versions

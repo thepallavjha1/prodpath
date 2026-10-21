@@ -1,0 +1,194 @@
+{
+  "fetched_at": "2000-01-01T00:00:00Z",
+  "missing": {},
+  "offers": {
+    "TESTOFFER": {
+      "published": "2000-01-01T00:00:00Z",
+      "version": "test"
+    }
+  },
+  "prices": {
+    "alb.hour": {
+      "description": "TEST ONLY: made-up round number, not an AWS price",
+      "ref": "TEST/alb.hour/alb.hour",
+      "unit": "Hrs",
+      "usd": 0.02
+    },
+    "alb.lcu_hour": {
+      "description": "TEST ONLY: made-up round number, not an AWS price",
+      "ref": "TEST/alb.lcu_hour/alb.lcu_hour",
+      "unit": "LCU-Hrs",
+      "usd": 0.01
+    },
+    "cloudwatch.logs_ingest_gb": {
+      "description": "TEST ONLY: made-up round number, not an AWS price",
+      "ref": "TEST/cloudwatch.logs_ingest_gb/cloudwatch.logs_ingest_gb",
+      "unit": "GB",
+      "usd": 0.5
+    },
+    "cloudwatch.logs_storage_gb_month": {
+      "description": "TEST ONLY: made-up round number, not an AWS price",
+      "ref": "TEST/cloudwatch.logs_storage_gb_month/cloudwatch.logs_storage_gb_month",
+      "unit": "GB-Mo",
+      "usd": 0.03
+    },
+    "dt.out_gb": {
+      "description": "TEST ONLY: made-up round number, not an AWS price",
+      "ref": "TEST/dt.out_gb/dt.out_gb",
+      "unit": "GB",
+      "usd": 0.1
+    },
+    "ecr.storage_gb_month": {
+      "description": "TEST ONLY: made-up round number, not an AWS price",
+      "ref": "TEST/ecr.storage_gb_month/ecr.storage_gb_month",
+      "unit": "GB-Mo",
+      "usd": 0.1
+    },
+    "elasticache.node.redis.cache.t4g.micro": {
+      "description": "TEST ONLY: made-up round number, not an AWS price",
+      "ref": "TEST/elasticache.node.redis.cache.t4g.micro/elasticache.node.redis.cache.t4g.micro",
+      "unit": "Hrs",
+      "usd": 0.02
+    },
+    "fargate.gb_hour": {
+      "description": "TEST ONLY: made-up round number, not an AWS price",
+      "ref": "TEST/fargate.gb_hour/fargate.gb_hour",
+      "unit": "hours",
+      "usd": 0.005
+    },
+    "fargate.vcpu_hour": {
+      "description": "TEST ONLY: made-up round number, not an AWS price",
+      "ref": "TEST/fargate.vcpu_hour/fargate.vcpu_hour",
+      "unit": "hours",
+      "usd": 0.04
+    },
+    "rds.instance.mysql.db.t4g.micro.multi_az": {
+      "description": "TEST ONLY: made-up round number, not an AWS price",
+      "ref": "TEST/rds.instance.mysql.db.t4g.micro.multi_az/rds.instance.mysql.db.t4g.micro.multi_az",
+      "unit": "Hrs",
+      "usd": 0.06
+    },
+    "rds.instance.mysql.db.t4g.micro.single_az": {
+      "description": "TEST ONLY: made-up round number, not an AWS price",
+      "ref": "TEST/rds.instance.mysql.db.t4g.micro.single_az/rds.instance.mysql.db.t4g.micro.single_az",
+      "unit": "Hrs",
+      "usd": 0.03
+    },
+    "rds.instance.mysql.db.t4g.small.multi_az": {
+      "description": "TEST ONLY: made-up round number, not an AWS price",
+      "ref": "TEST/rds.instance.mysql.db.t4g.small.multi_az/rds.instance.mysql.db.t4g.small.multi_az",
+      "unit": "Hrs",
+      "usd": 0.1
+    },
+    "rds.instance.mysql.db.t4g.small.single_az": {
+      "description": "TEST ONLY: made-up round number, not an AWS price",
+      "ref": "TEST/rds.instance.mysql.db.t4g.small.single_az/rds.instance.mysql.db.t4g.small.single_az",
+      "unit": "Hrs",
+      "usd": 0.05
+    },
+    "rds.instance.postgres.db.t4g.micro.multi_az": {
+      "description": "TEST ONLY: made-up round number, not an AWS price",
+      "ref": "TEST/rds.instance.postgres.db.t4g.micro.multi_az/rds.instance.postgres.db.t4g.micro.multi_az",
+      "unit": "Hrs",
+      "usd": 0.06
+    },
+    "rds.instance.postgres.db.t4g.micro.single_az": {
+      "description": "TEST ONLY: made-up round number, not an AWS price",
+      "ref": "TEST/rds.instance.postgres.db.t4g.micro.single_az/rds.instance.postgres.db.t4g.micro.single_az",
+      "unit": "Hrs",
+      "usd": 0.03
+    },
+    "rds.instance.postgres.db.t4g.small.multi_az": {
+      "description": "TEST ONLY: made-up round number, not an AWS price",
+      "ref": "TEST/rds.instance.postgres.db.t4g.small.multi_az/rds.instance.postgres.db.t4g.small.multi_az",
+      "unit": "Hrs",
+      "usd": 0.1
+    },
+    "rds.instance.postgres.db.t4g.small.single_az": {
+      "description": "TEST ONLY: made-up round number, not an AWS price",
+      "ref": "TEST/rds.instance.postgres.db.t4g.small.single_az/rds.instance.postgres.db.t4g.small.single_az",
+      "unit": "Hrs",
+      "usd": 0.05
+    },
+    "rds.storage.gp3.multi_az.mysql": {
+      "description": "TEST ONLY: made-up round number, not an AWS price",
+      "ref": "TEST/rds.storage.gp3.multi_az.mysql/rds.storage.gp3.multi_az.mysql",
+      "unit": "GB-Mo",
+      "usd": 0.2
+    },
+    "rds.storage.gp3.multi_az.postgres": {
+      "description": "TEST ONLY: made-up round number, not an AWS price",
+      "ref": "TEST/rds.storage.gp3.multi_az.postgres/rds.storage.gp3.multi_az.postgres",
+      "unit": "GB-Mo",
+      "usd": 0.2
+    },
+    "rds.storage.gp3.single_az.mysql": {
+      "description": "TEST ONLY: made-up round number, not an AWS price",
+      "ref": "TEST/rds.storage.gp3.single_az.mysql/rds.storage.gp3.single_az.mysql",
+      "unit": "GB-Mo",
+      "usd": 0.1
+    },
+    "rds.storage.gp3.single_az.postgres": {
+      "description": "TEST ONLY: made-up round number, not an AWS price",
+      "ref": "TEST/rds.storage.gp3.single_az.postgres/rds.storage.gp3.single_az.postgres",
+      "unit": "GB-Mo",
+      "usd": 0.1
+    },
+    "s3.get_request": {
+      "description": "TEST ONLY: made-up round number, not an AWS price",
+      "ref": "TEST/s3.get_request/s3.get_request",
+      "unit": "Requests",
+      "usd": 1e-06
+    },
+    "s3.put_request": {
+      "description": "TEST ONLY: made-up round number, not an AWS price",
+      "ref": "TEST/s3.put_request/s3.put_request",
+      "unit": "Requests",
+      "usd": 1e-05
+    },
+    "s3.storage_gb_month": {
+      "description": "TEST ONLY: made-up round number, not an AWS price",
+      "ref": "TEST/s3.storage_gb_month/s3.storage_gb_month",
+      "unit": "GB-Mo",
+      "usd": 0.02
+    },
+    "secrets.api_request": {
+      "description": "TEST ONLY: made-up round number, not an AWS price",
+      "ref": "TEST/secrets.api_request/secrets.api_request",
+      "unit": "API Requests",
+      "usd": 1e-05
+    },
+    "secrets.secret_month": {
+      "description": "TEST ONLY: made-up round number, not an AWS price",
+      "ref": "TEST/secrets.secret_month/secrets.secret_month",
+      "unit": "Secrets",
+      "usd": 0.5
+    },
+    "sqs.request": {
+      "description": "TEST ONLY: made-up round number, not an AWS price",
+      "ref": "TEST/sqs.request/sqs.request",
+      "unit": "Requests",
+      "usd": 1e-06
+    },
+    "vpc.endpoint_gb": {
+      "description": "TEST ONLY: made-up round number, not an AWS price",
+      "ref": "TEST/vpc.endpoint_gb/vpc.endpoint_gb",
+      "unit": "GB",
+      "usd": 0.01
+    },
+    "vpc.endpoint_hour": {
+      "description": "TEST ONLY: made-up round number, not an AWS price",
+      "ref": "TEST/vpc.endpoint_hour/vpc.endpoint_hour",
+      "unit": "Hrs",
+      "usd": 0.01
+    },
+    "vpc.public_ipv4_hour": {
+      "description": "TEST ONLY: made-up round number, not an AWS price",
+      "ref": "TEST/vpc.public_ipv4_hour/vpc.public_ipv4_hour",
+      "unit": "Hrs",
+      "usd": 0.005
+    }
+  },
+  "region": "ap-south-1",
+  "schema_version": 1
+}

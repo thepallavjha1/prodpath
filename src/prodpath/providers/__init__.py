@@ -1,13 +1,14 @@
+from pathlib import Path
+
 from prodpath.providers.aws import AwsProvider
+from prodpath.providers.aws.pricing import DEFAULT_PRICE_DIR
 from prodpath.providers.base import Provider
 
-PROVIDERS: dict[str, Provider] = {"aws": AwsProvider()}
+PROVIDER_NAMES = ["aws"]
 
 
-def get_provider(name: str) -> Provider:
-    try:
-        return PROVIDERS[name]
-    except KeyError:
-        raise ValueError(
-            f"unknown provider {name!r}; available: {', '.join(sorted(PROVIDERS))}"
-        ) from None
+def get_provider(name: str, price_dir: Path = DEFAULT_PRICE_DIR) -> Provider:
+    if name == "aws":
+        return AwsProvider(price_dir)
+    available = ", ".join(PROVIDER_NAMES)
+    raise ValueError(f"unknown provider {name!r}; available: {available}")

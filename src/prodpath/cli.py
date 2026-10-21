@@ -10,6 +10,7 @@ from prodpath.cache import HashCache
 from prodpath.detect import detect_services
 from prodpath.doctor import format_checks, run_doctor
 from prodpath.extract import extract_system
+from prodpath.forecast import UsageBook, UsageError, load_usage_file
 from prodpath.iac_check import DEFAULT_MIRROR, TerraformReport, run_checks
 from prodpath.llm import (
     DEFAULT_MAX_INPUT_TOKENS,
@@ -20,7 +21,8 @@ from prodpath.llm import (
 )
 from prodpath.models import Inventory, Prefs, ServiceCandidate, Summaries, SystemModel
 from prodpath.providers import get_provider
-from prodpath.render import render_plan
+from prodpath.providers.aws.pricing import DEFAULT_PRICE_DIR, PriceBook, PriceError, update_prices
+from prodpath.render import render_forecast, render_plan
 from prodpath.scan import scan_repo
 from prodpath.summarize import summarize_system
 
@@ -54,6 +56,20 @@ def build_parser() -> argparse.ArgumentParser:
     plan.add_argument(
         "--tf-mirror", type=Path, default=DEFAULT_MIRROR, help="local Terraform provider mirror"
     )
+    forecast = sub.add_parser("forecast", help="write FORECAST.md: monthly cost range and traps")
+    forecast.add_argument("--path", type=Path, default=Path("."), help="repo (default: .)")
+    forecast.add_argument("--provider", default="aws", choices=["aws"], help="target cloud")
+    forecast.add_argument("--region", default=Prefs().region, help="cloud region")
+    forecast.add_argument("--env", default="prod", choices=["prod", "nonprod"], help="environment")
+    forecast.add_argument("--usage", type=Path, help="usage.toml with your real numbers")
+    forecast.add_argument(
+        "--prices-dir", type=Path, default=DEFAULT_PRICE_DIR, help="price snapshots"
+    )
+    prices = sub.add_parser("prices", help="manage the local price snapshot")
+    prices_sub = prices.add_subparsers(dest="prices_command", required=True)
+    update = prices_sub.add_parser("update", help="download the public AWS Price List (networked)")
+    update.add_argument("--region", default=Prefs().region, help="region to download")
+    update.add_argument("--dest", type=Path, default=DEFAULT_PRICE_DIR, help="snapshot directory")
     return parser
 
 
@@ -227,6 +243,59 @@ def run_plan(repo: Path, prefs: Prefs, mirror: Path) -> int:
     return 1 if any(c.status == "fail" for c in checks) else 0
 
 
+def run_prices_update(region: str, directory: Path) -> int:
+    """The only networked command: downloads the public AWS Price List for one region."""
+    try:
+        path = update_prices(region, directory)
+        book = PriceBook.load(path)
+    except PriceError as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 1
+    print(f"wrote {path}")
+    print(book.describe())
+    print(f"{book.count} prices extracted")
+    for key, reason in sorted(book.missing.items()):
+        print(f"warning: no price for {key}: {reason}", file=sys.stderr)
+    return 0
+
+
+def run_forecast(repo: Path, prefs: Prefs, usage_path: Path | None, price_dir: Path) -> int:
+    repo = repo.resolve()
+    out_dir = repo / OUTPUT_DIR
+    cache = HashCache(out_dir / "cache.sqlite")
+    try:
+        inventory, _ = scan_repo(repo, cache)
+        system, _ = extract_system(repo, inventory, detect_services(repo, inventory), cache)
+    finally:
+        cache.close()
+    provider = get_provider(prefs.provider, price_dir)
+    arch = provider.choose(system, prefs)
+    try:
+        usage = load_usage_file(usage_path) if usage_path else UsageBook()
+        forecast = provider.forecast(arch, system, usage)
+    except (PriceError, UsageError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 1
+    traps = provider.traps(arch, system, forecast)
+    stamp = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    (out_dir / "out").mkdir(parents=True, exist_ok=True)
+    (out_dir / "forecast.json").write_text(
+        forecast.model_dump_json(indent=2) + "\n", encoding="utf-8"
+    )
+    (out_dir / "out" / "FORECAST.md").write_text(
+        render_forecast(arch, forecast, traps, stamp), encoding="utf-8"
+    )
+    print(f"wrote {out_dir / 'out' / 'FORECAST.md'}")
+    print(
+        f"expected ${forecast.total_expected:,.2f}/month "
+        f"(low ${forecast.total_low:,.2f}, spike ${forecast.total_spike:,.2f}); "
+        f"{len(traps)} traps, {len(forecast.not_priced)} items not priced"
+    )
+    defaults = sum(1 for a in forecast.assumptions if a.source == "default")
+    print(f"note: {defaults} assumptions are defaults; pass --usage usage.toml to use your numbers")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.WARNING)
@@ -237,6 +306,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "plan":
         prefs = Prefs(provider=args.provider, region=args.region, environment=args.env)
         return run_plan(args.path, prefs, args.tf_mirror)
+    if args.command == "prices":
+        return run_prices_update(args.region, args.dest)
+    if args.command == "forecast":
+        prefs = Prefs(provider=args.provider, region=args.region, environment=args.env)
+        return run_forecast(args.path, prefs, args.usage, args.prices_dir)
     if args.command == "summarize":
         return run_summarize(args.path, args.model, args.num_ctx)
     if args.command == "doctor":

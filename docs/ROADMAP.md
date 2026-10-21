@@ -72,11 +72,11 @@ Do not start the next phase "while you're here". If a task belongs to a later ph
 
 **Goal:** answer "What will this cost me, and what can bite me?"
 
-- [ ] `prices update` and local price snapshot reader
-- [ ] Usage model with labelled assumptions; coefficients inferred from code
-- [ ] `CostLine` computation for low / expected / spike
-- [ ] Trap registry (seed list in ARCHITECTURE section 9), each with a test
-- [ ] `FORECAST.md` rendering
+- [x] `prices update` and local price snapshot reader
+- [x] Usage model with labelled assumptions; coefficients inferred from code
+- [x] `CostLine` computation for low / expected / spike
+- [x] Trap registry (seed list in ARCHITECTURE section 9), each with a test
+- [x] `FORECAST.md` rendering
 
 **Exit:** hand-computed forecasts on 3 fixtures match the tool within rounding; every number traces to a price reference; the trap list for the real monorepo is reviewed by the user.
 

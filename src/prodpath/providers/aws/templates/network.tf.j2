@@ -144,7 +144,7 @@ resource "aws_vpc_endpoint" "s3" {
 }
 
 resource "aws_vpc_endpoint" "interface" {
-  for_each = toset([{% for name in (["ecr.api", "ecr.dkr", "logs"] + (["secretsmanager"] if has_secrets else [])) %}"{{ name }}"{{ ", " if not loop.last }}{% endfor %}])
+  for_each = toset([{% for name in endpoints %}"{{ name }}"{{ ", " if not loop.last }}{% endfor %}])
 
   vpc_id              = aws_vpc.main.id
   service_name        = "com.amazonaws.${var.region}.${each.key}"

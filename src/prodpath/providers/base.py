@@ -1,14 +1,11 @@
 from typing import Protocol
 
-from prodpath.models import Architecture, Prefs, Step, SystemModel
+from prodpath.forecast import UsageBook
+from prodpath.models import Architecture, Forecast, Prefs, Step, SystemModel, Trap
 
 
 class Provider(Protocol):
-    """Everything cloud-specific lives behind this (ADR-005).
-
-    Only the methods implemented so far are declared. forecast and traps join in Phase 6
-    (see ARCHITECTURE section 8).
-    """
+    """Everything cloud-specific lives behind this (ADR-005)."""
 
     name: str
 
@@ -19,3 +16,7 @@ class Provider(Protocol):
     def iac_gaps(self, arch: Architecture) -> list[str]: ...
 
     def render_iac(self, arch: Architecture) -> dict[str, str]: ...
+
+    def forecast(self, arch: Architecture, system: SystemModel, usage: UsageBook) -> Forecast: ...
+
+    def traps(self, arch: Architecture, system: SystemModel, forecast: Forecast) -> list[Trap]: ...

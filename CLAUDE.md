@@ -35,6 +35,8 @@ Use `/wrapup` at the end of any session to run steps 4 to 6 in order.
 ```
 uv sync                                   # install
 uv run prodpath --help                    # CLI
+uv run prodpath prices update --region ap-south-1   # the only networked command (public AWS Price List)
+uv run prodpath forecast --prices-dir <dir>       # FORECAST.md from the snapshot
 uv run pytest -q                          # fast tests (no model, no network)
 uv run pytest -m llm                      # slow tests that hit local Ollama
 uv run pytest -m tf                       # slow: real terraform validate via the local provider mirror

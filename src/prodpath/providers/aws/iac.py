@@ -21,6 +21,7 @@ GENERATED_TYPES = {
 }  # fmt: skip
 DB_PORTS = {"postgres": 5432, "mysql": 3306}
 DEFAULT_WEB_PORT = 8080
+AZ_COUNT = 2  # subnets and endpoint ENIs per AZ; the network template creates two of each
 # File name -> template. Empty renders are skipped, so each template guards itself.
 TEMPLATES = [
     "versions.tf", "backend.tf", "main.tf", "variables.tf", "network.tf", "ecr.tf", "iam.tf",
@@ -43,6 +44,11 @@ def tf_id(name: str) -> str:
     """A valid Terraform identifier from a service id or secret name."""
     cleaned = re.sub(r"[^a-zA-Z0-9_]", "_", name).lower()
     return cleaned if cleaned[:1].isalpha() or cleaned[:1] == "_" else f"s_{cleaned}"
+
+
+def interface_endpoints(has_secrets: bool) -> list[str]:
+    """Interface VPC endpoints the network template creates. Also used by the cost model."""
+    return ["ecr.api", "ecr.dkr", "logs", *(["secretsmanager"] if has_secrets else [])]
 
 
 def iac_gaps(arch: Architecture) -> list[str]:
@@ -144,6 +150,7 @@ def build_context(arch: Architecture) -> dict[str, Any]:
         "has_cluster": "ecs-cluster" in types,
         "has_alb": "alb" in types,
         "has_secrets": any(s["secrets"] for s in services),
+        "endpoints": interface_endpoints(any(s["secrets"] for s in services)),
         "has_github": "iam-github-oidc" in types,
         "has_ecr": "ecr" in types,
         "rds": rds,

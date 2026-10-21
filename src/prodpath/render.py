@@ -12,10 +12,12 @@ from prodpath.models import (
     Architecture,
     Component,
     Evidence,
+    Forecast,
     Prefs,
     Step,
     Summaries,
     SystemModel,
+    Trap,
 )
 
 SHARED_TYPES = {"rds", "elasticache", "documentdb"}
@@ -174,5 +176,138 @@ def render_plan(
         "## Not analyzed\n\n" + "\n".join(f"- {n}" for n in not_analyzed),
         "## What this plan is based on\n\n" + _uncertainty_section(system, arch, summaries),
         "## Not verified by this tool\n\n" + "\n".join(f"- {n}" for n in NOT_VERIFIED),
+    ]
+    return "\n\n".join(sections) + "\n"
+
+
+def _usd(amount: float) -> str:
+    return f"${amount:,.2f}"
+
+
+def _assumptions_table(forecast: Forecast) -> str:
+    lines = ["| Assumption | Value | Unit | Source | Note |", "|---|---|---|---|---|"]
+    for a in forecast.assumptions:
+        lines.append(f"| `{a.name}` | {a.value:g} | {a.unit} | **{a.source}** | {_cell(a.note)} |")
+    return "\n".join(lines)
+
+
+def _cost_table(forecast: Forecast) -> str:
+    lines = [
+        "| Component | Dimension | Expected qty | Unit | Unit price | Price ref "
+        "| Low | Expected | Spike |",
+        "|---|---|---|---|---|---|---|---|---|",
+    ]
+    for line in forecast.lines:
+        cells = (
+            f"`{line.component}`",
+            _cell(line.dimension),
+            f"{line.qty_expected:,.2f}",
+            line.unit,
+            f"${line.unit_price:.6g}",
+            f"`{line.price_ref}`",
+            _usd(line.usd_low),
+            _usd(line.usd_expected),
+            _usd(line.usd_spike),
+        )
+        lines.append("| " + " | ".join(cells) + " |")
+    totals = (
+        "**Total**",
+        "",
+        "",
+        "",
+        "",
+        "",
+        _usd(forecast.total_low),
+        _usd(forecast.total_expected),
+        _usd(forecast.total_spike),
+    )
+    lines.append("| " + " | ".join(totals) + " |")
+    return "\n".join(lines)
+
+
+def _drivers_section(forecast: Forecast) -> str:
+    by_component: dict[str, float] = {}
+    for line in forecast.lines:
+        by_component[line.component] = by_component.get(line.component, 0.0) + line.usd_expected
+    ranked = sorted(by_component.items(), key=lambda kv: (-kv[1], kv[0]))[:5]
+    total = forecast.total_expected or 1.0
+    return "\n".join(
+        f"{i}. `{name}`: {_usd(cost)} ({cost / total:.0%})"
+        for i, (name, cost) in enumerate(ranked, 1)
+    )
+
+
+def _traps_section(traps: list[Trap]) -> str:
+    if not traps:
+        return "No traps were detected for this architecture."
+    lines = []
+    for number, trap in enumerate(traps, start=1):
+        impact = (
+            f"about {_usd(trap.est_monthly_usd_impact)}/month"
+            if trap.est_monthly_usd_impact is not None
+            else "not priced"
+        )
+        lines.append(
+            f"### {number}. {trap.id} ({trap.severity})\n\n"
+            f"**Where:** {trap.where}  \n**Impact:** {impact}\n\n"
+            f"**Why it bites:** {trap.why}\n\n**Fix:** {trap.fix}\n"
+        )
+    return "\n".join(lines)
+
+
+def forecast_hash(forecast: Forecast, arch: Architecture) -> str:
+    material = forecast.model_dump_json() + arch.model_dump_json()
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()[:12]
+
+
+def render_forecast(
+    arch: Architecture, forecast: Forecast, traps: list[Trap], generated_at: str
+) -> str:
+    defaults = sum(1 for a in forecast.assumptions if a.source == "default")
+    low = next((a.value for a in forecast.assumptions if a.name == "scenario_low"), 0.0)
+    spike = next((a.value for a in forecast.assumptions if a.name == "scenario_spike"), 0.0)
+    header = (
+        f"<!-- prodpath {__version__} | generated {generated_at} | "
+        f"input {forecast_hash(forecast, arch)} -->"
+    )
+    summary = (
+        f"Target: **{forecast.provider.upper()}**, region `{forecast.region}`, environment "
+        f"`{arch.environment}`.\n\n"
+        f"**Expected: about {_usd(forecast.total_expected)} per month**, ranging from "
+        f"{_usd(forecast.total_low)} (low) to {_usd(forecast.total_spike)} (spike).\n\n"
+        "| Scenario | Traffic vs expected | USD per month |\n|---|---|---|\n"
+        f"| Low | {low:g}x | {_usd(forecast.total_low)} |\n"
+        f"| Expected | 1x | {_usd(forecast.total_expected)} |\n"
+        f"| Spike | {spike:g}x | {_usd(forecast.total_spike)} |\n\n"
+        f"{defaults} of {len(forecast.assumptions)} assumptions are defaults, not measurements: "
+        "supply a `usage.toml` to replace them with your real numbers."
+    )
+    not_priced = forecast.not_priced or [
+        "nothing: every planned component with a price model was priced"
+    ]
+    sections = [
+        header,
+        "# What will this cost me, and what can bite me?",
+        summary,
+        "## Biggest cost drivers\n\n" + _drivers_section(forecast),
+        "## Assumptions\n\nEvery number below depends on these. **Source** says where each came "
+        "from: `user` (your usage.toml), `default` (a placeholder), or `inferred` "
+        "(from your code).\n\n" + _assumptions_table(forecast),
+        "## Cost breakdown\n\nQuantities are monthly (730 hours). Always-on resources do not "
+        "change "
+        "between scenarios because nothing here autoscales; traffic-driven lines scale with the "
+        "scenario multiplier.\n\n" + _cost_table(forecast),
+        "## What can bite me\n\nRanked by severity, then estimated monthly impact.\n\n"
+        + _traps_section(traps),
+        "## Not priced\n\n" + "\n".join(f"- {item}" for item in not_priced),
+        "## Not included in any figure\n\n"
+        + "\n".join(f"- {item}" for item in forecast.not_included),
+        "## What this forecast is based on\n\n"
+        f"- Prices: {forecast.price_snapshot}.\n"
+        "- On-demand, first paid tier prices only. Every cost line cites its `price_ref` "
+        "(`<offer>/<sku>/<rateCode>`) in that public price file.\n"
+        "- Quantities come from the architecture and the assumptions above, not from measured "
+        "traffic. Treat the range as an order-of-magnitude guide until calibrated against a "
+        "real bill.",
     ]
     return "\n\n".join(sections) + "\n"
