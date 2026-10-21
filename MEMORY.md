@@ -34,10 +34,18 @@ Keep it short, factual and current. History goes in the changelog; design lives 
 
 ## Open questions
 
-- CPU model of the laptop (GPU: GTX 1650 4 GB; RAM: 8 GB, confirmed by the user).
-- What cold-run time is acceptable on the real monorepo? (phi3 is about 12 s per service on this laptop.)
-- Default AWS region for pricing. Currently `ap-south-1`; confirm.
-- Which real monorepo is the first test target, and may a sanitized copy be used as a fixture?
+- CPU model: i5-10300H (known). Cold-run time the user accepts on the real monorepo: still unanswered.
+- Real monorepo size and exact stack: mixed with frontends, size unknown until the first real run.
+- AWS region: still `ap-south-1` by default; the user has not explicitly confirmed it.
+- Real AWS bills for Phase 7 calibration: none yet (user, 2026-10-21).
+
+## Product answers (user, 2026-10-21)
+
+- Compute stays ECS Fargate behind one shared ALB; deploys via GitHub Actions; prod only (single environment).
+- Forecast should assume **medium** traffic (tens of req/s per service) until real numbers exist; the current 1 req/s default is a known mismatch to fix.
+- Monorepo is mixed with frontends: static sites/SPAs need an S3 + CloudFront rule and templates.
+- Next work ("everything"): frontend hosting, ECS autoscaling and alarms in Terraform, medium-traffic defaults, Phase 7 tooling (data pending), hardening on the real repo.
+- Audience is just the user: no PyPI, license or contribution-guide work.
 
 ## Open items (TODOs in code)
 
