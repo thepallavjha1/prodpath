@@ -74,4 +74,11 @@ Format: **Status** | **Context** | **Decision** | **Consequences**.
 - **Decision:** Add `Claim`, `ServiceSummary`, `SystemClaim`, `SystemSummary`, `Summaries` to `models.py`; new top-level module `doctor.py`; new `scripts/benchmark_models.py` (a dev tool, not part of the installed package); CLI command `prodpath summarize`. No new dependency (`httpx` is already allowed; `nvidia-smi` is called through `subprocess`). Rule-made summaries replace LLM calls for services with no facts.
 - **Consequences:** LLM output is constrained by schema plus evidence-id validation. Small context (4096) keeps the 4 GB card usable; large services lose low-value facts first and say so.
 
-<!-- Add new ADRs below. Next number: ADR-013 -->
+## ADR-013: Default local model is phi3 (Phase 3 benchmark)
+- **Status:** Accepted (2026-10-21), chosen by Claude from measured results; the user may override with `--model`
+- **Context:** `scripts/benchmark_models.py` ran 9 services (3 fixtures) per model on an i5-10300H, 7.8 GB RAM, GTX 1650 4 GB, `num_ctx=4096`, no cache.
+- **Results:** `phi3:latest` (3.8B, 2.2 GB, fits VRAM): 100% schema-valid on the first try, 100% evidence-citation rate, 12.3 s per call. `llama3.1:latest` (8B, 4.9 GB, spills to CPU): 100% valid, 96% citation rate, 33.1 s per call.
+- **Decision:** Default to `phi3:latest`. It meets the 95% validity target, cites better, and is 2.7x faster. Sample is small (9 calls per model); rerun the benchmark when the real monorepo or a new model is available.
+- **Consequences:** A 40-service cold run is about 40 x 12 s = 8 minutes plus the overview call; a warm run is served from the response cache. Quality of prose was not graded, only structure and evidence.
+
+<!-- Add new ADRs below. Next number: ADR-014 -->

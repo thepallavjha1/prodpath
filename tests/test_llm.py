@@ -92,3 +92,15 @@ def test_ollama_missing_model_suggests_pull() -> None:
 
 def test_estimate_tokens_is_monotonic() -> None:
     assert estimate_tokens("a" * 400) > estimate_tokens("a" * 40)
+
+
+def test_stats_count_first_try_repaired_and_failed_calls() -> None:
+    answers = iter(["bad", GOOD, GOOD, "bad", "bad"])
+    llm = FakeLLM(lambda s, u, schema: next(answers))
+    llm.complete("s", "repaired", Answer)  # bad, then good
+    llm.complete("s", "first try", Answer)  # good
+    with pytest.raises(LLMError):
+        llm.complete("s", "fails", Answer)  # bad, bad
+    assert (llm.stats.calls, llm.stats.valid_first_try) == (3, 1)
+    assert (llm.stats.valid_after_repair, llm.stats.failed) == (1, 1)
+    assert llm.stats.seconds >= 0

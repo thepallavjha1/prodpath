@@ -7,8 +7,10 @@ tested with the fake is the behaviour the real model gets.
 import hashlib
 import json
 import logging
+import time
 from abc import ABC, abstractmethod
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Protocol, TypeVar
 
 import httpx
@@ -48,12 +50,24 @@ def prompt_hash(model: str, num_ctx: int, system: str, user: str, schema: type[B
     return hashlib.sha256(material.encode("utf-8")).hexdigest()
 
 
+@dataclass
+class LLMStats:
+    """Model calls only (cache hits excluded); the Phase 3 benchmark reads these."""
+
+    calls: int = 0
+    valid_first_try: int = 0
+    valid_after_repair: int = 0
+    failed: int = 0
+    seconds: float = 0.0
+
+
 class ChatLLM(ABC):
     """Shared complete(): cache lookup, one call, validation, one repair retry, then raise."""
 
     model: str
     num_ctx: int
     cache: HashCache | None
+    stats: LLMStats
 
     @abstractmethod
     def chat(self, messages: Messages, schema: type[BaseModel]) -> str:
@@ -67,9 +81,21 @@ class ChatLLM(ABC):
             {"role": "system", "content": system},
             {"role": "user", "content": user},
         ]
+        started = time.monotonic()
+        self.stats.calls += 1
+        try:
+            result = self._complete_uncached(messages, schema, key)
+        finally:
+            self.stats.seconds += time.monotonic() - started
+        if self.cache is not None:
+            self.cache.put_llm(key, result.model_dump_json())
+        return result
+
+    def _complete_uncached(self, messages: Messages, schema: type[T], key: str) -> T:
         raw = self.chat(messages, schema)
         try:
             result = schema.model_validate_json(raw)
+            self.stats.valid_first_try += 1
         except (ValidationError, ValueError) as first_error:
             log.warning("invalid model output (prompt %s), retrying once", key[:12])
             messages += [
@@ -83,13 +109,13 @@ class ChatLLM(ABC):
             raw = self.chat(messages, schema)
             try:
                 result = schema.model_validate_json(raw)
+                self.stats.valid_after_repair += 1
             except (ValidationError, ValueError) as error:
+                self.stats.failed += 1
                 raise LLMError(
                     f"model {self.model} returned invalid output twice (prompt {key[:12]}): "
                     f"{str(error)[:300]}"
                 ) from error
-        if self.cache is not None:
-            self.cache.put_llm(key, result.model_dump_json())
         return result
 
 
@@ -104,6 +130,7 @@ class OllamaLLM(ChatLLM):
         self.model = model
         self.num_ctx = num_ctx
         self.cache = cache
+        self.stats = LLMStats()
         self._client = client or httpx.Client(base_url=OLLAMA_URL, timeout=TIMEOUT_SECONDS)
 
     def chat(self, messages: Messages, schema: type[BaseModel]) -> str:
@@ -146,6 +173,7 @@ class FakeLLM(ChatLLM):
         self.model = model
         self.num_ctx = DEFAULT_NUM_CTX
         self.cache = cache
+        self.stats = LLMStats()
         self._handler = handler
         self.calls = 0
 

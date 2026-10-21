@@ -41,10 +41,10 @@ Do not start the next phase "while you're here". If a task belongs to a later ph
 
 **Goal:** readable, trustworthy summaries from a small local model.
 
-- [ ] `llm.py`: `OllamaLLM`, `FakeLLM`, schema-validated output, repair retry, response cache
-- [ ] `prodpath doctor` real checks (Ollama reachable, model present, VRAM)
-- [ ] `summarize.py` map-reduce with token budgets
-- [ ] Small benchmark script comparing 2 to 3 candidate models on the fixtures (valid-JSON rate, evidence-citation rate, seconds per service). Record results in MEMORY.md and DECISIONS.md
+- [x] `llm.py`: `OllamaLLM`, `FakeLLM`, schema-validated output, repair retry, response cache
+- [x] `prodpath doctor` real checks (Ollama reachable, model present, VRAM)
+- [x] `summarize.py` map-reduce with token budgets
+- [x] Small benchmark script comparing 2 to 3 candidate models on the fixtures (valid-JSON rate, evidence-citation rate, seconds per service). Record results in MEMORY.md and DECISIONS.md
 
 **Exit:** chosen default model yields schema-valid output on at least 95% of calls across fixtures; cold run on the real monorepo finishes in an acceptable time (user defines "acceptable" and it is recorded).
 

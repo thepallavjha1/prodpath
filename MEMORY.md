@@ -15,10 +15,11 @@ Keep it short, factual and current. History goes in the changelog; design lives 
 
 ## Current state
 
-- Phase: **2 (fact extraction) implemented; Phase 1 and 2 both wait on the real-monorepo check** (the only unmet exit criteria).
-- Works: `prodpath scan` and `prodpath facts [--path] [--service]` (writes `.prodpath/system.json`); extractors in `src/prodpath/facts/` (python ast, javascript tree-sitter, docker, compose, manifests/env), `extract.py` (stage 3 with per-file facts cache), `edges.py` (http and shared-infra edges), `redact.py`. Goldens for detect and system output on mono_a/b/c; secret-leak invariants with fake secrets (`hunter2`, `AKIAIOSFODNN7EXAMPLE`). 70 tests, ruff, mypy --strict green.
-- Code is published at https://github.com/thepallavjha1/prodpath (public, branch main). Commit and push after each task.
-- Next action: user runs `prodpath scan` and `prodpath facts` on the real monorepo, reports wrong services and spot-checks 10 facts; each miss becomes a fixture and a test. Then Phase 3 (local LLM) on the user's go-ahead.
+- Phase: **3 (local LLM summaries) implemented; Phases 1 to 3 all wait on the real-monorepo check.** Remaining Phase 3 exit item: the user defines an acceptable cold-run time for the real monorepo.
+- Works: `prodpath doctor [--model]` (real checks), `prodpath summarize [--path --model --num-ctx]` (writes `.prodpath/summaries.json`), `llm.py` (OllamaLLM, FakeLLM, repair retry, response cache, call stats), `summarize.py` (budgeted prompts, evidence-id validation resolved to path:line, rule summaries for fact-less services), `scripts/benchmark_models.py`. 92 fast tests plus 1 `-m llm` test green; ruff and mypy --strict clean.
+- Benchmark (9 services, ADR-013): phi3 100% valid / 100% cited / 12.3 s per call; llama3.1 100% / 96% / 33.1 s. Default model: `phi3:latest`.
+- Code is at https://github.com/thepallavjha1/prodpath (public, main). Commit and push after each task.
+- Next action: user runs `scan`, `facts` and `summarize` on the real monorepo, spot-checks services and 10 facts, and states an acceptable cold-run time. Then Phase 4 (AWS architecture choice and PLAN.md) on the user's go-ahead.
 
 ## Decisions (short form; details in docs/DECISIONS.md)
 
@@ -34,7 +35,7 @@ Keep it short, factual and current. History goes in the changelog; design lives 
 ## Open questions
 
 - CPU model of the laptop (GPU: GTX 1650 4 GB; RAM: 8 GB, confirmed by the user).
-- Which local model gives acceptable structured-JSON quality on this hardware? Decide in Phase 3 with a small benchmark.
+- What cold-run time is acceptable on the real monorepo? (phi3 is about 12 s per service on this laptop.)
 - Default AWS region for pricing. Currently `ap-south-1`; confirm.
 - Which real monorepo is the first test target, and may a sanitized copy be used as a fixture?
 
@@ -52,10 +53,13 @@ Keep it short, factual and current. History goes in the changelog; design lives 
 - `uv sync` run before `src/prodpath/` existed does not install the project; rerun `uv sync --reinstall-package prodpath` if `import prodpath` fails.
 - Unknown packages produce no fact (only the KNOWN_PACKAGES table in facts/manifests.py); extend it when the real monorepo shows misses. Bump EXTRACTOR_VERSION in extract.py whenever an extractor changes.
 - Shared infra is only detected through compose image-only services; two services both using psycopg2 are not assumed to share a database.
+- Ollama models present: phi3:latest (2.2 GB), llama3.1:latest (4.9 GB). Models are pulled by the user, never by the tool. llama3.1 spills to CPU on 4 GB VRAM.
+- Summary claims store `path:line` refs, not the prompt ids (F1...); the ids only exist inside one prompt.
 - Build backend is hatchling (needed so `prodpath` is installable as a console script).
 
 ## Changelog
 
+- 2026-10-21 | phase-3 | Added llm.py, summarize.py, doctor.py, `summarize` and real `doctor` commands, benchmark script, Summaries models, llm_cache table; chose phi3 default (ADR-012, ADR-013) | Phase 3 roadmap | src/prodpath/*, scripts/*, tests/*, docs/*
 - 2026-10-21 | phase-2 | Added facts/* extractors, extract.py, edges.py, redact.py, `prodpath facts`, SystemModel.not_analyzed, goldens and invariants (ADR-011) | Phase 2 roadmap | src/prodpath/*, tests/*, docs/*
 - 2026-10-21 | phase-1 | Added scan.py, detect.py, cache.py, `prodpath scan`, FileEntry/Inventory/ServiceCandidate models, golden + rule + cache tests; added pyyaml (ADR-010) | Phase 1 roadmap | src/prodpath/{scan,detect,cache,cli,models}.py, tests/*, docs/*
 - 2026-10-21 | phase-0 | Bootstrapped uv project, models.py contracts, CLI stub, 3 fixtures, socket guard, tests; recorded real GPU specs | Phase 0 roadmap | pyproject.toml, src/prodpath/*, tests/*, docs/ARCHITECTURE.md, docs/ROADMAP.md
