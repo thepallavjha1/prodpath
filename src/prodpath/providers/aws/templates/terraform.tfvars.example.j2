@@ -12,7 +12,15 @@ image_tags = {
 {% if has_alb %}
 
 certificate_arn = "<ACM_CERTIFICATE_ARN>"
-domain_name     = "<YOUR_DOMAIN>"
+{% endif %}
+{% if has_alb or static_sites %}
+
+domain_name = "<YOUR_DOMAIN>"
+{% endif %}
+{% if static_sites %}
+
+# Must be an ACM certificate in us-east-1 covering <service-id>.<YOUR_DOMAIN> for every site.
+site_certificate_arn = "<ACM_CERTIFICATE_ARN_IN_US_EAST_1>"
 {% endif %}
 {% if cron_services %}
 

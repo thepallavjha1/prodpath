@@ -8,7 +8,7 @@ from tests.helpers import scan_and_detect
 GOLDEN = Path(__file__).parent / "golden"
 
 
-@pytest.mark.parametrize("name", ["mono_a", "mono_b", "mono_c"])
+@pytest.mark.parametrize("name", ["mono_a", "mono_b", "mono_c", "mono_d"])
 def test_services_match_golden(
     name: str, fixtures_dir: Path, tmp_path: Path, update_golden: bool
 ) -> None:
@@ -21,7 +21,7 @@ def test_services_match_golden(
 
 
 def test_every_candidate_has_evidence(fixtures_dir: Path, tmp_path: Path) -> None:
-    for name in ("mono_a", "mono_b", "mono_c"):
+    for name in ("mono_a", "mono_b", "mono_c", "mono_d"):
         services, _, _ = scan_and_detect(fixtures_dir / name, tmp_path / f"{name}.sqlite")
         assert services and all(s.evidence for s in services)
 

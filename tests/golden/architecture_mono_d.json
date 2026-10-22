@@ -1,0 +1,459 @@
+{
+  "schema_version": 1,
+  "provider": "aws",
+  "region": "ap-south-1",
+  "environment": "prod",
+  "components": [
+    {
+      "type": "tf-state",
+      "name": "tf-state",
+      "sizing": "1 S3 bucket (versioned, encrypted) + 1 lock table",
+      "reason": "Remote state with locking keeps Terraform safe once more than one person or pipeline applies changes (SECURITY.md section 5).",
+      "serves": [],
+      "evidence": [],
+      "items": [],
+      "params": {}
+    },
+    {
+      "type": "iam-github-oidc",
+      "name": "github-oidc-role",
+      "sizing": "1 IAM role trusted by GitHub Actions via OIDC",
+      "reason": "CI/CD deploys by assuming a role, so no long-lived AWS keys are stored in GitHub.",
+      "serves": [
+        "apps-api",
+        "apps-dashboard",
+        "apps-docs",
+        "apps-marketing",
+        "apps-spa"
+      ],
+      "evidence": [],
+      "items": [],
+      "params": {}
+    },
+    {
+      "type": "vpc",
+      "name": "vpc",
+      "sizing": "2 AZs, public + private subnets, S3 and ECR VPC endpoints",
+      "reason": "Containers and data stores run in private subnets; endpoints avoid NAT data charges for image pulls and S3 traffic.",
+      "serves": [
+        "apps-api",
+        "apps-dashboard"
+      ],
+      "evidence": [
+        {
+          "path": "apps/api/Dockerfile",
+          "line": 4,
+          "snippet": "EXPOSE 8000"
+        },
+        {
+          "path": "apps/dashboard/package.json",
+          "line": 4,
+          "snippet": "\"dependencies\": {\"next\": \"^14\", \"react\": \"^18\"}"
+        }
+      ],
+      "items": [],
+      "params": {}
+    },
+    {
+      "type": "ecs-cluster",
+      "name": "ecs-cluster",
+      "sizing": "1 Fargate-only cluster",
+      "reason": "One cluster runs every container service; Fargate means no servers to patch.",
+      "serves": [
+        "apps-api",
+        "apps-dashboard"
+      ],
+      "evidence": [
+        {
+          "path": "apps/api/Dockerfile",
+          "line": 4,
+          "snippet": "EXPOSE 8000"
+        },
+        {
+          "path": "apps/dashboard/package.json",
+          "line": 4,
+          "snippet": "\"dependencies\": {\"next\": \"^14\", \"react\": \"^18\"}"
+        }
+      ],
+      "items": [],
+      "params": {}
+    },
+    {
+      "type": "alb",
+      "name": "alb",
+      "sizing": "1 Application Load Balancer, host/path routing",
+      "reason": "One shared load balancer for all web services avoids paying for one per service.",
+      "serves": [
+        "apps-api",
+        "apps-dashboard"
+      ],
+      "evidence": [
+        {
+          "path": "apps/api/Dockerfile",
+          "line": 4,
+          "snippet": "EXPOSE 8000"
+        },
+        {
+          "path": "apps/dashboard/package.json",
+          "line": 4,
+          "snippet": "\"dependencies\": {\"next\": \"^14\", \"react\": \"^18\"}"
+        }
+      ],
+      "items": [],
+      "params": {}
+    },
+    {
+      "type": "ecr",
+      "name": "ecr-apps-api",
+      "sizing": "1 repository, scan on push",
+      "reason": "Stores the container image for apps-api.",
+      "serves": [
+        "apps-api"
+      ],
+      "evidence": [
+        {
+          "path": "apps/api/Dockerfile",
+          "line": 4,
+          "snippet": "EXPOSE 8000"
+        }
+      ],
+      "items": [],
+      "params": {}
+    },
+    {
+      "type": "ecr",
+      "name": "ecr-apps-dashboard",
+      "sizing": "1 repository, scan on push",
+      "reason": "Stores the container image for apps-dashboard.",
+      "serves": [
+        "apps-dashboard"
+      ],
+      "evidence": [
+        {
+          "path": "apps/dashboard/package.json",
+          "line": 4,
+          "snippet": "\"dependencies\": {\"next\": \"^14\", \"react\": \"^18\"}"
+        }
+      ],
+      "items": [],
+      "params": {}
+    },
+    {
+      "type": "rds",
+      "name": "rds-postgres",
+      "sizing": "db.t4g.small, 20 GB gp3, Multi-AZ, backups on",
+      "reason": "postgres is a managed relational database on RDS. One instance serves every service that uses it (give each its own database and user).",
+      "serves": [
+        "apps-api"
+      ],
+      "evidence": [
+        {
+          "path": "apps/api/requirements.txt",
+          "line": 2,
+          "snippet": "psycopg2-binary"
+        }
+      ],
+      "items": [],
+      "params": {
+        "engine": "postgres",
+        "instance_class": "db.t4g.small",
+        "allocated_storage": "20",
+        "multi_az": "true"
+      }
+    },
+    {
+      "type": "s3-site",
+      "name": "s3-site-apps-docs",
+      "sizing": "private bucket, encryption on, versioning on",
+      "reason": "Holds the built files of apps-docs; only CloudFront can read them.",
+      "serves": [
+        "apps-docs"
+      ],
+      "evidence": [
+        {
+          "path": "apps/docs/Dockerfile",
+          "line": 8,
+          "snippet": "EXPOSE 80"
+        }
+      ],
+      "items": [
+        "build:dist"
+      ],
+      "params": {
+        "build_dir": "dist",
+        "spa": "false"
+      }
+    },
+    {
+      "type": "s3-site",
+      "name": "s3-site-apps-marketing",
+      "sizing": "private bucket, encryption on, versioning on",
+      "reason": "Holds the built files of apps-marketing; only CloudFront can read them.",
+      "serves": [
+        "apps-marketing"
+      ],
+      "evidence": [
+        {
+          "path": "apps/marketing/package.json",
+          "line": 4,
+          "snippet": "\"dependencies\": {\"next\": \"^14\", \"react\": \"^18\"}"
+        }
+      ],
+      "items": [
+        "build:out"
+      ],
+      "params": {
+        "build_dir": "out",
+        "spa": "false"
+      }
+    },
+    {
+      "type": "s3-site",
+      "name": "s3-site-apps-spa",
+      "sizing": "private bucket, encryption on, versioning on",
+      "reason": "Holds the built files of apps-spa; only CloudFront can read them.",
+      "serves": [
+        "apps-spa"
+      ],
+      "evidence": [
+        {
+          "path": "apps/spa/package.json",
+          "line": 4,
+          "snippet": "\"dependencies\": {\"react\": \"^18\", \"react-dom\": \"^18\"},"
+        }
+      ],
+      "items": [
+        "build:dist"
+      ],
+      "params": {
+        "build_dir": "dist",
+        "spa": "true"
+      }
+    },
+    {
+      "type": "cloudfront",
+      "name": "cloudfront-apps-docs",
+      "sizing": "1 distribution, HTTPS only, TLS 1.2+, compression, PriceClass_All",
+      "reason": "apps-docs is a static build: a CDN in front of S3 gives HTTPS, caching and low latency with no servers to run.",
+      "serves": [
+        "apps-docs"
+      ],
+      "evidence": [
+        {
+          "path": "apps/docs/Dockerfile",
+          "line": 8,
+          "snippet": "EXPOSE 80"
+        }
+      ],
+      "items": [
+        "build:dist"
+      ],
+      "params": {
+        "build_dir": "dist",
+        "spa": "false",
+        "price_class": "PriceClass_All"
+      }
+    },
+    {
+      "type": "cloudfront",
+      "name": "cloudfront-apps-marketing",
+      "sizing": "1 distribution, HTTPS only, TLS 1.2+, compression, PriceClass_All",
+      "reason": "apps-marketing is a static build: a CDN in front of S3 gives HTTPS, caching and low latency with no servers to run.",
+      "serves": [
+        "apps-marketing"
+      ],
+      "evidence": [
+        {
+          "path": "apps/marketing/package.json",
+          "line": 4,
+          "snippet": "\"dependencies\": {\"next\": \"^14\", \"react\": \"^18\"}"
+        }
+      ],
+      "items": [
+        "build:out"
+      ],
+      "params": {
+        "build_dir": "out",
+        "spa": "false",
+        "price_class": "PriceClass_All"
+      }
+    },
+    {
+      "type": "cloudfront",
+      "name": "cloudfront-apps-spa",
+      "sizing": "1 distribution, HTTPS only, TLS 1.2+, compression, PriceClass_All",
+      "reason": "apps-spa is a static build: a CDN in front of S3 gives HTTPS, caching and low latency with no servers to run.",
+      "serves": [
+        "apps-spa"
+      ],
+      "evidence": [
+        {
+          "path": "apps/spa/package.json",
+          "line": 4,
+          "snippet": "\"dependencies\": {\"react\": \"^18\", \"react-dom\": \"^18\"},"
+        }
+      ],
+      "items": [
+        "build:dist"
+      ],
+      "params": {
+        "build_dir": "dist",
+        "spa": "true",
+        "price_class": "PriceClass_All"
+      }
+    },
+    {
+      "type": "secrets",
+      "name": "secrets-apps-api",
+      "sizing": "1 secret slot, no values",
+      "reason": "These variables look like credentials or connection strings. Slots are created empty; set values yourself, out of band.",
+      "serves": [
+        "apps-api"
+      ],
+      "evidence": [
+        {
+          "path": "apps/api/app.py",
+          "line": 6,
+          "snippet": "os.environ[\"DATABASE_URL\"]"
+        }
+      ],
+      "items": [
+        "DATABASE_URL"
+      ],
+      "params": {}
+    },
+    {
+      "type": "log-group",
+      "name": "logs-apps-api",
+      "sizing": "retention 30 days",
+      "reason": "CloudWatch logs with an explicit retention so they cannot grow forever.",
+      "serves": [
+        "apps-api"
+      ],
+      "evidence": [
+        {
+          "path": "apps/api/Dockerfile",
+          "line": 4,
+          "snippet": "EXPOSE 8000"
+        }
+      ],
+      "items": [],
+      "params": {
+        "retention_days": "30"
+      }
+    },
+    {
+      "type": "log-group",
+      "name": "logs-apps-dashboard",
+      "sizing": "retention 30 days",
+      "reason": "CloudWatch logs with an explicit retention so they cannot grow forever.",
+      "serves": [
+        "apps-dashboard"
+      ],
+      "evidence": [
+        {
+          "path": "apps/dashboard/package.json",
+          "line": 4,
+          "snippet": "\"dependencies\": {\"next\": \"^14\", \"react\": \"^18\"}"
+        }
+      ],
+      "items": [],
+      "params": {
+        "retention_days": "30"
+      }
+    },
+    {
+      "type": "iam-task-role",
+      "name": "role-apps-api",
+      "sizing": "least-privilege task role",
+      "reason": "apps-api gets its own role limited to the resources it uses.",
+      "serves": [
+        "apps-api"
+      ],
+      "evidence": [
+        {
+          "path": "apps/api/Dockerfile",
+          "line": 4,
+          "snippet": "EXPOSE 8000"
+        }
+      ],
+      "items": [],
+      "params": {}
+    },
+    {
+      "type": "iam-task-role",
+      "name": "role-apps-dashboard",
+      "sizing": "least-privilege task role",
+      "reason": "apps-dashboard gets its own role limited to the resources it uses.",
+      "serves": [
+        "apps-dashboard"
+      ],
+      "evidence": [
+        {
+          "path": "apps/dashboard/package.json",
+          "line": 4,
+          "snippet": "\"dependencies\": {\"next\": \"^14\", \"react\": \"^18\"}"
+        }
+      ],
+      "items": [],
+      "params": {}
+    },
+    {
+      "type": "ecs-service-web",
+      "name": "ecs-svc-apps-api",
+      "sizing": "Fargate 0.5 vCPU / 1 GB, 2 tasks (default)",
+      "reason": "Stateless HTTP container behind the shared load balancer.",
+      "serves": [
+        "apps-api"
+      ],
+      "evidence": [
+        {
+          "path": "apps/api/Dockerfile",
+          "line": 4,
+          "snippet": "EXPOSE 8000"
+        }
+      ],
+      "items": [
+        "port:8000",
+        "health:/health"
+      ],
+      "params": {
+        "cpu": "512",
+        "memory": "1024",
+        "desired_count": "2"
+      }
+    },
+    {
+      "type": "ecs-service-web",
+      "name": "ecs-svc-apps-dashboard",
+      "sizing": "Fargate 0.5 vCPU / 1 GB, 2 tasks (default)",
+      "reason": "Stateless HTTP container behind the shared load balancer.",
+      "serves": [
+        "apps-dashboard"
+      ],
+      "evidence": [
+        {
+          "path": "apps/dashboard/package.json",
+          "line": 4,
+          "snippet": "\"dependencies\": {\"next\": \"^14\", \"react\": \"^18\"}"
+        }
+      ],
+      "items": [],
+      "params": {
+        "cpu": "512",
+        "memory": "1024",
+        "desired_count": "2"
+      }
+    }
+  ],
+  "unknowns": [
+    "Domain name and ACM certificate are needed for HTTPS on the load balancer.",
+    "Traffic and data volume are unknown: all sizing is a default starting point.",
+    "apps-dashboard: no listening port found; set the container port.",
+    "apps-docs: build output directory not detected; assumed dist.",
+    "apps-docs: needs a domain (served at apps-docs.<domain_name>) and a CloudFront ACM certificate created in us-east-1, which Terraform does not create.",
+    "apps-marketing: needs a domain (served at apps-marketing.<domain_name>) and a CloudFront ACM certificate created in us-east-1, which Terraform does not create.",
+    "apps-spa: assumed a single-page app (403/404 answered with /index.html); turn the fallback off for multi-page sites.",
+    "apps-spa: needs a domain (served at apps-spa.<domain_name>) and a CloudFront ACM certificate created in us-east-1, which Terraform does not create."
+  ]
+}

@@ -328,6 +328,8 @@ def _verify_step(arch: Architecture) -> Step:
         commands.append(
             f"curl -fsS https://<HOST_FOR_{c.name.upper().replace('-', '_')}>{health or '/<HEALTH_PATH?>'}"
         )
+    for c in _of_type(arch, "cloudfront"):
+        commands.append(f"curl -fsS https://{c.serves[0]}.<YOUR_DOMAIN>/")
     commands.append("# Check CloudWatch logs for errors and confirm every secret slot has a value")
     return Step(
         id="verify",
@@ -480,13 +482,46 @@ def _alarms_step(arch: Architecture) -> Step | None:
     )
 
 
+def _frontend_step(arch: Architecture) -> Step | None:
+    sites = _of_type(arch, "cloudfront")
+    if not sites:
+        return None
+    commands = []
+    for c in sites:
+        sid = c.serves[0]
+        label = sid.upper().replace("-", "_")
+        build_dir = _item(c, "build") or "dist"
+        commands += [
+            f"# {sid}: build and upload",
+            f"cd <PATH_TO_{label}>",
+            "npm ci && npm run build",
+            f"aws s3 sync {build_dir}/ s3://<BUCKET_FOR_{label}> --delete   "
+            "# terraform output site_buckets",
+            f"aws cloudfront create-invalidation --distribution-id <DISTRIBUTION_ID_FOR_{label}> "
+            '--paths "/*"',
+            f"# DNS: point {sid}.<YOUR_DOMAIN> at <DISTRIBUTION_DOMAIN_FOR_{label}> "
+            "(terraform output site_distributions): a CNAME, or an alias record in Route 53",
+        ]
+    return Step(
+        id="frontend",
+        title="Build and publish the static sites",
+        why="Static sites are plain files in a private bucket behind CloudFront. Upload the build "
+        "output, invalidate the cache so visitors get it, and point your domain at the "
+        "distribution.",
+        commands=commands,
+        verify="Each site loads over HTTPS on its own domain and a deep link returns the app.",
+        components=_names(sites),
+    )
+
+
 def build_steps(arch: Architecture) -> Builder:
     if not arch.components:
         return []
-    if _of_type(arch, "ecs-cluster"):  # Terraform covers this architecture
+    if _of_type(arch, "ecs-cluster", "cloudfront"):  # Terraform covers this architecture
         builders = [
             _account_step, _state_step, _terraform_step, _secret_values_step, _push_images_step,
-            _gaps_step, _cicd_terraform_step, _alarms_step, _rollback_step, _verify_step,
+            _gaps_step, _frontend_step, _cicd_terraform_step, _alarms_step, _rollback_step,
+            _verify_step,
         ]  # fmt: skip
     else:  # e.g. a lone App Runner service: by-hand commands, no Terraform templates
         builders = [

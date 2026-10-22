@@ -1,0 +1,67 @@
+[
+  {
+    "certainty": "parsed",
+    "evidence": [
+      {
+        "line": 4,
+        "path": "apps/api/Dockerfile",
+        "snippet": "EXPOSE 8000"
+      }
+    ],
+    "id": "apps-api",
+    "kind": "web",
+    "root": "apps/api"
+  },
+  {
+    "certainty": "heuristic",
+    "evidence": [
+      {
+        "line": 4,
+        "path": "apps/dashboard/package.json",
+        "snippet": "\"dependencies\": {\"next\": \"^14\", \"react\": \"^18\"}"
+      }
+    ],
+    "id": "apps-dashboard",
+    "kind": "web",
+    "root": "apps/dashboard"
+  },
+  {
+    "certainty": "parsed",
+    "evidence": [
+      {
+        "line": 8,
+        "path": "apps/docs/Dockerfile",
+        "snippet": "EXPOSE 80"
+      }
+    ],
+    "id": "apps-docs",
+    "kind": "static",
+    "root": "apps/docs"
+  },
+  {
+    "certainty": "heuristic",
+    "evidence": [
+      {
+        "line": 1,
+        "path": "apps/marketing/next.config.js",
+        "snippet": "module.exports = { output: \"export\" };"
+      }
+    ],
+    "id": "apps-marketing",
+    "kind": "static",
+    "root": "apps/marketing"
+  },
+  {
+    "certainty": "heuristic",
+    "evidence": [
+      {
+        "line": 3,
+        "path": "apps/spa/package.json",
+        "snippet": "\"scripts\": {\"dev\": \"vite\", \"build\": \"vite build\"},"
+      }
+    ],
+    "id": "apps-spa",
+    "kind": "static",
+    "root": "apps/spa"
+  }
+]

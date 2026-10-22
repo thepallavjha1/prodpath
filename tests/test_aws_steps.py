@@ -101,3 +101,33 @@ def test_architecture_without_a_cluster_keeps_the_by_hand_steps() -> None:
 def test_empty_architecture_has_no_steps() -> None:
     _, steps = plan_steps([svc("lib", "lib", [f("framework", "flask")])])
     assert steps == []
+
+
+SITE = [f("framework", "vite"), f("framework", "react")]
+
+
+def test_a_static_site_alone_uses_the_terraform_flow_with_a_frontend_step() -> None:
+    _, steps = plan_steps([svc("web", "static", SITE)])
+    ids = [s.id for s in steps]
+    assert ids == ["account", "state", "terraform", "frontend", "cicd", "rollback", "verify"]
+
+
+def test_frontend_step_builds_syncs_invalidates_and_explains_dns() -> None:
+    _, steps = plan_steps([svc("api", "web", API_FACTS), svc("web", "static", SITE)])
+    ids = [s.id for s in steps]
+    assert ids.index("terraform") < ids.index("images") < ids.index("frontend")
+    text = "\n".join(step(steps, "frontend").commands)
+    assert "npm ci && npm run build" in text
+    assert "aws s3 sync dist/ s3://" in text and "--delete" in text
+    assert "create-invalidation --distribution-id" in text and '--paths "/*"' in text
+    assert "web.<YOUR_DOMAIN>" in text
+
+
+def test_verify_step_checks_each_site() -> None:
+    _, steps = plan_steps([svc("web", "static", SITE)])
+    assert any("https://web.<YOUR_DOMAIN>/" in c for c in step(steps, "verify").commands)
+
+
+def test_frontend_commands_use_the_detected_build_directory() -> None:
+    _, steps = plan_steps([svc("blog", "static", [f("framework", "gatsby")])])
+    assert "aws s3 sync public/ s3://" in "\n".join(step(steps, "frontend").commands)

@@ -18,6 +18,11 @@ import httpx
 PRICE_LIST_URL = (
     "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/{offer}/current/{region}/index.json"
 )
+# CloudFront prices (data out, HTTPS requests) are in one global file keyed by edge geography;
+# the per-region file only holds Origin Shield and Lambda@Edge.
+GLOBAL_OFFERS = {"AmazonCloudFront"}
+GLOBAL_URL = "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/{offer}/current/index.json"
+EDGE_GEOGRAPHIES = "IN|US|EU|AP|AU|CA|JP|ME|SA|ZA"
 DEFAULT_PRICE_DIR = Path.home() / ".cache" / "prodpath" / "prices"
 SNAPSHOT_VERSION = 1
 TIMEOUT_SECONDS = 600.0
@@ -71,7 +76,7 @@ SPECS = [
     Spec("dt.out_gb", "AWSDataTransfer", "DataTransfer-Out-Bytes",
          (("toLocation", "^External$"), ("transferType", "^AWS Outbound$"))),
 ]  # fmt: skip
-OFFERS = sorted({spec.offer for spec in SPECS} | {"AmazonRDS", "AmazonElastiCache"})
+OFFERS = sorted({spec.offer for spec in SPECS} | {"AmazonRDS", "AmazonElastiCache", *GLOBAL_OFFERS})
 
 
 def _first_paid_price(offer: str, data: dict[str, Any], sku: str) -> Price | None:
@@ -161,6 +166,18 @@ def _extract_elasticache(data: dict[str, Any]) -> dict[str, Price]:
     return prices
 
 
+def _extract_cloudfront(data: dict[str, Any]) -> dict[str, Price]:
+    """cloudfront.out_gb.<geo> and cloudfront.requests_https.<geo>, e.g. geo = in, us, eu."""
+    keys = {"DataTransfer-Out-Bytes": "out_gb", "Requests-Tier2-HTTPS": "requests_https"}
+    pattern = rf"^({EDGE_GEOGRAPHIES})-(DataTransfer-Out-Bytes|Requests-Tier2-HTTPS)$"
+    prices: dict[str, Price] = {}
+    for sku, product in data["products"].items():
+        match = re.match(pattern, product.get("attributes", {}).get("usagetype", ""))
+        if match and (price := _first_paid_price("AmazonCloudFront", data, sku)) is not None:
+            prices[f"cloudfront.{keys[match.group(2)]}.{match.group(1).lower()}"] = price
+    return prices
+
+
 def extract_offer(offer: str, data: dict[str, Any]) -> tuple[dict[str, Price], dict[str, str]]:
     """All prices we model from one offer file, plus the keys that could not be resolved."""
     prices, missing = _extract_specs(offer, data)
@@ -168,7 +185,15 @@ def extract_offer(offer: str, data: dict[str, Any]) -> tuple[dict[str, Price], d
         prices.update(_extract_rds(data))
     if offer == "AmazonElastiCache":
         prices.update(_extract_elasticache(data))
+    if offer == "AmazonCloudFront":
+        prices.update(_extract_cloudfront(data))
     return prices, missing
+
+
+def offer_url(offer: str, region: str) -> str:
+    if offer in GLOBAL_OFFERS:
+        return GLOBAL_URL.format(offer=offer)
+    return PRICE_LIST_URL.format(offer=offer, region=region)
 
 
 def snapshot_path(directory: Path, region: str) -> Path:
@@ -182,7 +207,7 @@ def update_prices(region: str, directory: Path, client: httpx.Client | None = No
     missing: dict[str, str] = {}
     offers: dict[str, dict[str, str]] = {}
     for offer in OFFERS:
-        url = PRICE_LIST_URL.format(offer=offer, region=region)
+        url = offer_url(offer, region)
         try:
             response = client.get(url)
             response.raise_for_status()

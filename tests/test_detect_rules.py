@@ -74,3 +74,78 @@ def test_code_inside_a_claimed_service_is_not_a_second_service(tmp_path: Path) -
         "pkg/requirements.txt": "flask\n",
     }
     assert detect(tmp_path, files) == {"root": "worker"}
+
+
+VITE_PACKAGE = (
+    '{"name": "site", "scripts": {"build": "vite build"}, '
+    '"dependencies": {"react": "^18"}, "devDependencies": {"vite": "^5"}}'
+)
+
+
+def test_standalone_vite_app_is_a_static_site(tmp_path: Path) -> None:
+    files = {"frontend/package.json": VITE_PACKAGE, "frontend/src/main.jsx": "render()\n"}
+    assert detect(tmp_path, files) == {"frontend": "static"}
+
+
+def test_vite_app_at_the_repo_root_is_static(tmp_path: Path) -> None:
+    assert detect(tmp_path, {"package.json": VITE_PACKAGE}) == {"root": "static"}
+
+
+def test_workspace_member_with_a_build_tool_is_static_and_plain_packages_stay_libs(
+    tmp_path: Path,
+) -> None:
+    files = {
+        "pnpm-workspace.yaml": 'packages:\n  - "apps/*"\n  - "packages/*"\n',
+        "package.json": '{"name": "root", "private": true}',
+        "apps/web/package.json": VITE_PACKAGE,
+        "packages/ui/package.json": '{"name": "ui", "dependencies": {"react": "^18"}}',
+    }
+    assert detect(tmp_path, files) == {"apps-web": "static", "packages-ui": "lib"}
+
+
+def test_a_build_tool_without_a_build_script_is_not_a_site(tmp_path: Path) -> None:
+    files = {"tool/package.json": '{"name": "t", "devDependencies": {"vite": "^5"}}'}
+    assert detect(tmp_path, files) == {"tool": "lib"}
+
+
+def test_a_frontend_with_its_own_server_stays_web(tmp_path: Path) -> None:
+    files = {
+        "app/package.json": VITE_PACKAGE,
+        "app/server.js": "require('http').createServer().listen(3000)\n",
+    }
+    assert detect(tmp_path, files) == {"app": "web"}
+
+
+def test_next_with_static_export_is_static_and_ssr_next_is_web(tmp_path: Path) -> None:
+    next_package = (
+        '{"name": "n", "scripts": {"build": "next build"}, "dependencies": {"next": "14"}}'
+    )
+    files = {
+        "marketing/package.json": next_package,
+        "marketing/next.config.js": 'module.exports = { output: "export" };\n',
+        "dashboard/package.json": next_package,
+        "dashboard/next.config.js": "module.exports = {};\n",
+    }
+    assert detect(tmp_path, files) == {"dashboard": "web", "marketing": "static"}
+
+
+def test_a_dockerfile_that_copies_a_build_into_nginx_html_is_static(tmp_path: Path) -> None:
+    dockerfile = (
+        "FROM node:20 AS build\nRUN npm run build\n"
+        "FROM nginx:1.27\nCOPY --from=build /app/dist /usr/share/nginx/html\nEXPOSE 80\n"
+    )
+    assert detect(tmp_path, {"docs/Dockerfile": dockerfile}) == {"docs": "static"}
+
+
+def test_nginx_as_a_reverse_proxy_is_not_a_static_site(tmp_path: Path) -> None:
+    dockerfile = "FROM nginx:1.27\nCOPY proxy.conf /etc/nginx/conf.d/default.conf\nEXPOSE 80\n"
+    assert detect(tmp_path, {"proxy/Dockerfile": dockerfile}) == {"proxy": "web"}
+
+
+def test_static_detection_records_the_matching_line_as_evidence(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    write_files(repo, {"frontend/package.json": VITE_PACKAGE.replace(", ", ",\n")})
+    services, _, _ = scan_and_detect(repo, tmp_path / "c.sqlite")
+    evidence = services[0].evidence[0]
+    assert evidence.path == "frontend/package.json" and "vite" in evidence.snippet
+    assert services[0].certainty == "heuristic"

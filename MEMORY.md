@@ -15,11 +15,11 @@ Keep it short, factual and current. History goes in the changelog; design lives 
 
 ## Current state
 
-- Phase: **6 (forecast and traps) implemented; Phases 1 to 6 wait on the user's real-monorepo review.** Exit criteria met on fixtures: hand-computed forecasts for mono_a/b/c match the tool within half a cent in all three scenarios (tests/test_costs.py), every cost line cites a price_ref that exists in the snapshot, every assumption renders with its source. Remaining: the user reviews the trap list for the real monorepo.
-- Works: `prodpath prices update --region R` (downloads 11 public AWS Price List offers, ~25 MB, extracts 943 prices into `~/.cache/prodpath/prices/R.json`; already run for ap-south-1 on 2026-10-21), `prodpath forecast [--path --region --env --usage usage.toml --prices-dir]` writes `.prodpath/out/FORECAST.md` and `forecast.json`. Modules: `forecast.py` (usage book, usage.toml), `providers/aws/{pricing,costs,traps}.py`, `render_forecast` in `render.py`. 262 fast tests + 7 `-m tf` tests, ruff, mypy --strict green.
-- Real-price results on fixtures (ap-south-1, prod, all defaults): mono_a $214/month, mono_b $195, mono_c $424 (spike 5x: $245 / $223 / $563). Interface VPC endpoints are the largest single cost for small systems (52% of nonprod mono_a).
+- Phase: **7 (frontend hosting) implemented; waiting on the user's real-monorepo run to confirm the frontends were found.** Next in the approved plan (ADR-017): Phase 8 autoscaling + alarms, 9 medium-traffic defaults, 10 calibration tooling (blocked on bills), 11 hardening + `prodpath run`.
+- Works: static sites/SPAs are detected (`detect.py` `_frontend_kind`, nginx-html Dockerfiles in `classify_kind`; Next SSR is `web`), planned as `s3-site` + `cloudfront` (`rules.py` `rule_static`), rendered to `static_site.tf` (private bucket, OAC, TLS 1.2+, SPA fallback, bucket policy by SourceArn), deployed via a `frontend` step, priced from the global CloudFront offer by edge geography, and covered by two new traps. Fixture `mono_d` has goldens. 319 fast tests + 9 `-m tf` tests (real terraform validate incl. static sites), ruff, mypy --strict green.
+- Real-price forecast for mono_d (ap-south-1, prod, defaults): $276/month; each static site costs about $6/month, far less than endpoints ($76) or RDS ($67).
 - Code is at https://github.com/thepallavjha1/prodpath (public, main). Commit and push after each task.
-- Next action: user runs the whole pipeline on the real monorepo (`scan`, `facts`, `summarize`, `plan`, `forecast`, ideally with a `usage.toml`), reviews PLAN.md, the Terraform, FORECAST.md and the trap list, spot-checks 10 facts, states an acceptable cold-run time and confirms the AWS region. Then Phase 7 (calibration against real bills) on the user's go-ahead.
+- Next action: user says "go" for Phase 8; separately the user runs `scan`, `facts`, `summarize`, `plan`, `forecast` on the real monorepo and reports misses.
 
 ## Decisions (short form; details in docs/DECISIONS.md)
 
@@ -72,10 +72,13 @@ Keep it short, factual and current. History goes in the changelog; design lives 
 - Price data: real Price List files were inspected once (usagetype has a region prefix like APS3-, tiers in priceDimensions, Global- SKUs hold free allowances). NAT gateway pricing is only in the 315 MB EC2 offer, so NAT is never priced; its trap says so. tests/fixtures/prices/ap-south-1.json holds made-up round numbers labelled TEST ONLY: never commit real AWS prices.
 - Forecast defaults (1 req/s, 10 KB responses, 2 KB logs per request, 30 task starts) are placeholders; per-request log volume and S3/SQS ratios are not extracted from code yet (Phase 7 candidate). Always-free tiers are not applied, so figures lean high. Fargate and ALB lines do not scale with spike because nothing autoscales (the no-autoscaling trap says so).
 - Traps are ranked by severity first, then estimated impact, so an unpriced high-severity trap (no outbound path) is listed first.
+- CloudFront prices are in the GLOBAL `AmazonCloudFront` offer (no region segment), keyed by edge geography (IN-, US-, EU-...); the per-region file only has Origin Shield and Lambda@Edge. `prices update` must be re-run once to add CloudFront to an existing snapshot. A usagetype prefix check like `ap-south` also matches `ap-southeast-*`: use `ap-south-`.
+- The CloudFront certificate must be in us-east-1 and is a required variable (`site_certificate_arn`); no second provider alias is generated. Price class defaults to PriceClass_All (cheaper classes exclude India/Asia).
 - Build backend is hatchling (needed so `prodpath` is installable as a console script).
 
 ## Changelog
 
+- 2026-10-22 | phase-7 | Static site detection, rule_static, static_site.tf, frontend step, CloudFront pricing (global offer), two traps, fixture mono_d, ROADMAP re-plan (ADR-017) | Phase 7 roadmap | src/prodpath/{detect,facts/manifests,forecast,render}.py, src/prodpath/providers/aws/*, tests/*, docs/*
 - 2026-10-21 | phase-6 | Added forecast.py, providers/aws/{pricing,costs,traps}.py, render_forecast, `prices update` and `forecast` commands, Forecast model, usage.toml, 10 traps, committed TEST-ONLY price snapshot, hand-computed forecast tests (ADR-016) | Phase 6 roadmap | src/prodpath/*, tests/*, docs/*
 - 2026-10-21 | phase-5 | Added providers/aws/iac.py + 19 Jinja2 templates, iac_check.py (self-scan, fmt, validate), Component.params, reworked steps, Terraform section in PLAN.md, doctor mirror check, `tf` test marker; removed AWS-key-shaped literals from the repo after a GitHub secret-scanning alert (ADR-015) | Phase 5 roadmap | src/prodpath/{providers/aws,iac_check,render,cli,doctor,models}.py, tests/*, docs/*
 - 2026-10-21 | phase-4 | Added Provider protocol, AWS rules and steps, render.py, `prodpath plan`, Prefs/Step models and richer Component/Architecture (ADR-014); goldens for plans | Phase 4 roadmap | src/prodpath/{providers,render,cli,models}.py, tests/*, docs/*

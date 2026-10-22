@@ -15,7 +15,7 @@ from prodpath.render import NOT_VERIFIED, render_plan
 from prodpath.scan import scan_repo
 
 GOLDEN = Path(__file__).parent / "golden"
-FIXTURE_NAMES = ["mono_a", "mono_b", "mono_c"]
+FIXTURE_NAMES = ["mono_a", "mono_b", "mono_c", "mono_d"]
 STAMP = "2000-01-01T00:00:00Z"
 FAKE_SECRETS = ["hunter2"]
 

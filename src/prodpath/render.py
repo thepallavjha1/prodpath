@@ -21,7 +21,13 @@ from prodpath.models import (
 )
 
 SHARED_TYPES = {"rds", "elasticache", "documentdb"}
-COMPUTE_TYPES = {"ecs-service-web", "ecs-service-worker", "scheduled-task", "apprunner"}
+COMPUTE_TYPES = {
+    "ecs-service-web",
+    "ecs-service-worker",
+    "scheduled-task",
+    "apprunner",
+    "cloudfront",
+}
 NOT_VERIFIED = [
     "Load and performance: sizing is a default, not a measurement.",
     "Compliance and legal requirements (data residency, audit, PCI/HIPAA and similar).",

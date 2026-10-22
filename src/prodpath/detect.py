@@ -7,6 +7,7 @@ import fnmatch
 import json
 import logging
 import posixpath
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
@@ -39,6 +40,23 @@ DEPENDENCY_MANIFESTS = {
     "Cargo.toml",
     "pom.xml",
 }
+STATIC_BUILD_TOOLS = {
+    "@angular/cli",
+    "@docusaurus/core",
+    "@sveltejs/adapter-static",
+    "@vue/cli-service",
+    "astro",
+    "gatsby",
+    "react-scripts",
+    "vite",
+    "vitepress",
+    "vuepress",
+}
+# Where nginx/httpd serve files from: a Dockerfile copying a build here is a static site.
+STATIC_HTML_DIRS = ("/usr/share/nginx/html", "/usr/local/apache2/htdocs", "/var/www/html")
+STATIC_SERVER_IMAGES = ("nginx", "httpd", "caddy")
+NEXT_CONFIGS = {"next.config.js", "next.config.mjs", "next.config.cjs", "next.config.ts"}
+NEXT_EXPORT = re.compile(r"""output\s*:\s*["']export["']""")
 K8S_KINDS: dict[str, Kind] = {"Deployment": "worker", "StatefulSet": "worker", "CronJob": "cron"}
 
 
@@ -91,14 +109,27 @@ def _is_dockerfile(name: str) -> bool:
     return name == "Dockerfile" or name.startswith("Dockerfile.")
 
 
+def _serves_static_files(dockerfile: str) -> bool:
+    """The final stage is a plain web server and a build is copied into its html directory."""
+    images = [
+        line.split()[1].lower()
+        for line in dockerfile.splitlines()
+        if line.strip().upper().startswith("FROM ") and len(line.split()) > 1
+    ]
+    final_is_server = bool(images) and images[-1].startswith(STATIC_SERVER_IMAGES)
+    return final_is_server and any(d in dockerfile for d in STATIC_HTML_DIRS)
+
+
 def classify_kind(repo: Repo, root: str, has_ports: bool = False) -> Kind:
-    """cron if a crontab sits in the root; web if something is exposed; else worker."""
+    """cron with a crontab; static for a build in nginx html; web if exposed; else worker."""
     files = repo.by_dir.get(root, set())
     if "crontab" in files:
         return "cron"
-    for name in sorted(files):
-        if _is_dockerfile(name) and "EXPOSE" in repo.read(_join(root, name)):
-            return "web"
+    dockerfiles = [_join(root, name) for name in sorted(files) if _is_dockerfile(name)]
+    if any(_serves_static_files(repo.read(path)) for path in dockerfiles):
+        return "static"
+    if any("EXPOSE" in repo.read(path) for path in dockerfiles):
+        return "web"
     return "web" if has_ports else "worker"
 
 
@@ -178,6 +209,36 @@ def _find_entrypoint(repo: Repo, root: str) -> Evidence | None:
     return None
 
 
+def _package_json(repo: Repo, root: str) -> dict[str, Any] | None:
+    if "package.json" not in repo.by_dir.get(root, set()):
+        return None
+    try:
+        data = json.loads(repo.read(_join(root, "package.json")))
+    except json.JSONDecodeError:
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _frontend_kind(repo: Repo, root: str) -> tuple[Kind, Evidence] | None:
+    """static for a built site, web for server-rendered Next.js, None when it is not a frontend."""
+    data = _package_json(repo, root)
+    if data is None or _find_entrypoint(repo, root) is not None:
+        return None  # not a package, or it brings its own server (then it is a web service)
+    path = _join(root, "package.json")
+    dependencies = {**(data.get("dependencies") or {}), **(data.get("devDependencies") or {})}
+    if "next" in dependencies:
+        for name in sorted(repo.by_dir.get(root, set()) & NEXT_CONFIGS):
+            config = _join(root, name)
+            if NEXT_EXPORT.search(repo.read(config)):
+                return "static", _evidence(repo, config, "export", config)
+        return "web", _evidence(repo, path, '"next"', path)
+    scripts = data.get("scripts")
+    tool = next((t for t in sorted(STATIC_BUILD_TOOLS) if t in dependencies), None)
+    if tool and isinstance(scripts, dict) and "build" in scripts:
+        return "static", _evidence(repo, path, f'"{tool}"', path)
+    return None
+
+
 def detect_from_workspaces(repo: Repo) -> set[str]:
     """Claim workspace members; return workspace root dirs (never services themselves)."""
     workspace_roots: set[str] = set()
@@ -189,6 +250,9 @@ def detect_from_workspaces(repo: Repo) -> set[str]:
                 continue
             relative = directory if where == "." else directory.removeprefix(where + "/")
             if fnmatch.fnmatch(relative, pattern.removeprefix("./")):
+                if (frontend := _frontend_kind(repo, directory)) is not None:
+                    repo.claim(directory, frontend[0], "heuristic", frontend[1])
+                    continue
                 # A member with a listening server is deployable; the rest are libraries.
                 kind: Kind = "web" if _find_entrypoint(repo, directory) else "lib"
                 evidence = _evidence(repo, manifest, pattern.split("*")[0].rstrip("/"), manifest)
@@ -219,6 +283,9 @@ def detect_leftover_manifests(repo: Repo, workspace_roots: set[str]) -> None:
     for directory, files in sorted(repo.by_dir.items()):
         manifests = sorted(files & DEPENDENCY_MANIFESTS)
         if not manifests or directory in workspace_roots or repo.is_inside_claimed(directory):
+            continue
+        if (frontend := _frontend_kind(repo, directory)) is not None:
+            repo.claim(directory, frontend[0], "heuristic", frontend[1])
             continue
         kind: Kind = "unknown" if manifests == ["requirements.txt"] else "lib"
         path = _join(directory, manifests[0])

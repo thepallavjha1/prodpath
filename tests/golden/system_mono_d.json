@@ -1,0 +1,216 @@
+{
+  "schema_version": 1,
+  "services": [
+    {
+      "id": "apps-api",
+      "root": "apps/api",
+      "kind": "web",
+      "facts": [
+        {
+          "kind": "datastore",
+          "value": "postgres",
+          "evidence": [
+            {
+              "path": "apps/api/requirements.txt",
+              "line": 2,
+              "snippet": "psycopg2-binary"
+            }
+          ],
+          "certainty": "parsed"
+        },
+        {
+          "kind": "env_var",
+          "value": "DATABASE_URL",
+          "evidence": [
+            {
+              "path": "apps/api/app.py",
+              "line": 6,
+              "snippet": "os.environ[\"DATABASE_URL\"]"
+            }
+          ],
+          "certainty": "parsed"
+        },
+        {
+          "kind": "framework",
+          "value": "flask",
+          "evidence": [
+            {
+              "path": "apps/api/app.py",
+              "line": 3,
+              "snippet": "from flask import Flask"
+            },
+            {
+              "path": "apps/api/requirements.txt",
+              "line": 1,
+              "snippet": "flask"
+            }
+          ],
+          "certainty": "parsed"
+        },
+        {
+          "kind": "health_endpoint",
+          "value": "/health",
+          "evidence": [
+            {
+              "path": "apps/api/app.py",
+              "line": 9,
+              "snippet": "@app.route(\"/health\")"
+            }
+          ],
+          "certainty": "parsed"
+        },
+        {
+          "kind": "port",
+          "value": "8000",
+          "evidence": [
+            {
+              "path": "apps/api/Dockerfile",
+              "line": 4,
+              "snippet": "EXPOSE 8000"
+            }
+          ],
+          "certainty": "parsed"
+        },
+        {
+          "kind": "runtime",
+          "value": "python:3.12-slim",
+          "evidence": [
+            {
+              "path": "apps/api/Dockerfile",
+              "line": 1,
+              "snippet": "FROM python:3.12-slim"
+            }
+          ],
+          "certainty": "parsed"
+        }
+      ]
+    },
+    {
+      "id": "apps-dashboard",
+      "root": "apps/dashboard",
+      "kind": "web",
+      "facts": [
+        {
+          "kind": "framework",
+          "value": "next.js",
+          "evidence": [
+            {
+              "path": "apps/dashboard/package.json",
+              "line": 4,
+              "snippet": "\"dependencies\": {\"next\": \"^14\", \"react\": \"^18\"}"
+            }
+          ],
+          "certainty": "parsed"
+        },
+        {
+          "kind": "framework",
+          "value": "react",
+          "evidence": [
+            {
+              "path": "apps/dashboard/package.json",
+              "line": 4,
+              "snippet": "\"dependencies\": {\"next\": \"^14\", \"react\": \"^18\"}"
+            }
+          ],
+          "certainty": "parsed"
+        }
+      ]
+    },
+    {
+      "id": "apps-docs",
+      "root": "apps/docs",
+      "kind": "static",
+      "facts": [
+        {
+          "kind": "port",
+          "value": "80",
+          "evidence": [
+            {
+              "path": "apps/docs/Dockerfile",
+              "line": 8,
+              "snippet": "EXPOSE 80"
+            }
+          ],
+          "certainty": "parsed"
+        },
+        {
+          "kind": "runtime",
+          "value": "nginx:1.27",
+          "evidence": [
+            {
+              "path": "apps/docs/Dockerfile",
+              "line": 6,
+              "snippet": "FROM nginx:1.27"
+            }
+          ],
+          "certainty": "parsed"
+        }
+      ]
+    },
+    {
+      "id": "apps-marketing",
+      "root": "apps/marketing",
+      "kind": "static",
+      "facts": [
+        {
+          "kind": "framework",
+          "value": "next.js",
+          "evidence": [
+            {
+              "path": "apps/marketing/package.json",
+              "line": 4,
+              "snippet": "\"dependencies\": {\"next\": \"^14\", \"react\": \"^18\"}"
+            }
+          ],
+          "certainty": "parsed"
+        },
+        {
+          "kind": "framework",
+          "value": "react",
+          "evidence": [
+            {
+              "path": "apps/marketing/package.json",
+              "line": 4,
+              "snippet": "\"dependencies\": {\"next\": \"^14\", \"react\": \"^18\"}"
+            }
+          ],
+          "certainty": "parsed"
+        }
+      ]
+    },
+    {
+      "id": "apps-spa",
+      "root": "apps/spa",
+      "kind": "static",
+      "facts": [
+        {
+          "kind": "framework",
+          "value": "react",
+          "evidence": [
+            {
+              "path": "apps/spa/package.json",
+              "line": 4,
+              "snippet": "\"dependencies\": {\"react\": \"^18\", \"react-dom\": \"^18\"},"
+            }
+          ],
+          "certainty": "parsed"
+        },
+        {
+          "kind": "framework",
+          "value": "vite",
+          "evidence": [
+            {
+              "path": "apps/spa/package.json",
+              "line": 3,
+              "snippet": "\"scripts\": {\"dev\": \"vite\", \"build\": \"vite build\"},"
+            }
+          ],
+          "certainty": "parsed"
+        }
+      ]
+    }
+  ],
+  "edges": [],
+  "shared_infra": [],
+  "not_analyzed": []
+}

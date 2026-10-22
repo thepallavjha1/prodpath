@@ -20,6 +20,18 @@
       "unit": "LCU-Hrs",
       "usd": 0.01
     },
+    "cloudfront.out_gb.in": {
+      "description": "TEST ONLY: made-up round number, not an AWS price",
+      "ref": "TEST/cloudfront.out_gb.in/cloudfront.out_gb.in",
+      "unit": "GB",
+      "usd": 0.1
+    },
+    "cloudfront.requests_https.in": {
+      "description": "TEST ONLY: made-up round number, not an AWS price",
+      "ref": "TEST/cloudfront.requests_https.in/cloudfront.requests_https.in",
+      "unit": "Requests",
+      "usd": 1e-06
+    },
     "cloudwatch.logs_ingest_gb": {
       "description": "TEST ONLY: made-up round number, not an AWS price",
       "ref": "TEST/cloudwatch.logs_ingest_gb/cloudwatch.logs_ingest_gb",

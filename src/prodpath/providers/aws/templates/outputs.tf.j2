@@ -15,7 +15,7 @@ output "alb_dns_name" {
   value       = aws_lb.main.dns_name
 }
 {% endif %}
-{% if has_github and services %}
+{% if has_github and (services or static_sites) %}
 
 output "github_actions_role_arn" {
   description = "Role for GitHub Actions to assume with OIDC (role-to-assume)."
@@ -56,6 +56,29 @@ output "rds_master_secret_arns" {
   value = {
 {% for db in rds %}
     "{{ db.engine }}" = aws_db_instance.{{ db.tf }}.master_user_secret[0].secret_arn
+{% endfor %}
+  }
+}
+{% endif %}
+{% if static_sites %}
+
+output "site_distributions" {
+  description = "CloudFront distribution per static site. Point <service-id>.<domain_name> at the domain name."
+  value = {
+{% for s in static_sites %}
+    "{{ s.id }}" = {
+      id          = aws_cloudfront_distribution.site_{{ s.tf }}.id
+      domain_name = aws_cloudfront_distribution.site_{{ s.tf }}.domain_name
+    }
+{% endfor %}
+  }
+}
+
+output "site_buckets" {
+  description = "Bucket per static site; upload the build output here."
+  value = {
+{% for s in static_sites %}
+    "{{ s.id }}" = aws_s3_bucket.site_{{ s.tf }}.id
 {% endfor %}
   }
 }

@@ -337,6 +337,71 @@ def _internet_egress(costing: _Costing, web: list[_Web]) -> None:
     )
 
 
+# Viewers are assumed to sit in the same geography as the AWS region; CloudFront bills by the
+# geography of the edge that serves them. First matching prefix wins.
+EDGE_GEOGRAPHY_BY_REGION = (
+    ("ap-south-", "in"), ("ap-northeast", "jp"), ("ap-southeast-2", "au"), ("ap-", "ap"),
+    ("eu-", "eu"), ("us-", "us"), ("ca-", "ca"), ("sa-", "sa"), ("me-", "me"), ("il-", "me"),
+    ("af-", "za"),
+)  # fmt: skip
+
+
+def edge_geography(region: str) -> str:
+    return next(
+        (geo for prefix, geo in EDGE_GEOGRAPHY_BY_REGION if region.startswith(prefix)), "us"
+    )
+
+
+def _static_sites(costing: _Costing) -> None:
+    sites = sorted(_services(costing.arch, "cloudfront"), key=lambda c: c.name)
+    if not sites:
+        return
+    usage, seconds = costing.usage, costing.hours * 3600
+    geography = edge_geography(costing.arch.region)
+    usage.infer(
+        "cloudfront_edge_geography",
+        1.0,
+        "geography",
+        f"Viewers are assumed to be in the same geography as {costing.arch.region}, so "
+        f"CloudFront is priced at its {geography.upper()} edge rates.",
+    )
+    hit_ratio = usage.get("cdn_cache_hit_ratio")
+    for c in sites:
+        sid = c.serves[0]
+        requests = usage.get("avg_requests_per_second", sid) * seconds
+        gigabytes = requests * usage.get("response_kb", sid) / KB_PER_GB
+        edge = f"cloudfront-{sid}"
+        costing.add(
+            edge,
+            "HTTPS requests",
+            "requests",
+            f"cloudfront.requests_https.{geography}",
+            costing.traffic(requests),
+        )
+        costing.add(
+            edge,
+            "data transfer out",
+            "GB",
+            f"cloudfront.out_gb.{geography}",
+            costing.traffic(gigabytes),
+        )
+        bucket = f"s3-site-{sid}"
+        costing.add(
+            bucket,
+            "storage",
+            "GB-month",
+            "s3.storage_gb_month",
+            costing.constant(usage.get("site_stored_gb")),
+        )
+        costing.add(
+            bucket,
+            "GET requests (cache misses)",
+            "requests",
+            "s3.get_request",
+            costing.traffic(requests * (1 - hit_ratio)),
+        )
+
+
 def build_forecast(
     arch: Architecture, system: SystemModel, usage: UsageBook, prices: PriceBook
 ) -> Forecast:
@@ -349,6 +414,7 @@ def build_forecast(
     _data_stores(costing)
     _secrets_and_registry(costing)
     _internet_egress(costing, web)
+    _static_sites(costing)
     for c in arch.components:
         if c.type in NOT_MODELLED:
             costing.not_priced.append(f"{c.name} ({c.type}): {NOT_MODELLED[c.type]}")

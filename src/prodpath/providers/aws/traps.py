@@ -130,14 +130,14 @@ def trap_public_ipv4(ctx: TrapContext) -> Trap | None:
 
 
 def trap_internet_egress(ctx: TrapContext) -> Trap | None:
-    expected = ctx.cost(component="internet-egress")
+    expected = ctx.cost(dimension="data transfer out")
     if not expected:
         return None
-    spike = ctx.cost(component="internet-egress", scenario="spike")
+    spike = ctx.cost(dimension="data transfer out", scenario="spike")
     return Trap(
         id="internet-egress",
         severity=_severity_by_share(ctx.share(spike, "spike")),
-        where="alb.tf / every web service",
+        where="alb.tf / static_site.tf (every service that serves users)",
         why="Data transferred out to the internet is billed per GB and scales with traffic and "
         f"response size. At the spike scenario it is about ${spike:,.2f}/month.",
         fix="Compress responses, cache at a CDN, and avoid returning large payloads by default.",
@@ -250,10 +250,45 @@ def trap_cross_az(ctx: TrapContext) -> Trap | None:
     )
 
 
+def trap_cloudfront_certificate(ctx: TrapContext) -> Trap | None:
+    sites = ctx.components("cloudfront")
+    if not sites:
+        return None
+    names = ", ".join(c.serves[0] for c in sites)
+    return Trap(
+        id="cloudfront-certificate-region",
+        severity="medium",
+        where="variables.tf (site_certificate_arn), static_site.tf",
+        why=f"CloudFront only accepts ACM certificates from us-east-1, whatever region the rest of "
+        f"the stack uses, and Terraform does not create it. Without one, {names} cannot be "
+        "served on its own domain.",
+        fix="Request one certificate in us-east-1 covering <service-id>.<domain_name> for each "
+        "site (or a wildcard), validate it by DNS, and pass its ARN as site_certificate_arn.",
+        est_monthly_usd_impact=None,
+    )
+
+
+def trap_spa_fallback(ctx: TrapContext) -> Trap | None:
+    spas = [c.serves[0] for c in ctx.components("cloudfront") if c.params.get("spa") == "true"]
+    if not spas:
+        return None
+    return Trap(
+        id="spa-fallback-hides-404s",
+        severity="low",
+        where="static_site.tf (custom_error_response)",
+        why=f"{', '.join(spas)} answer every unknown path with /index.html and status 200, so "
+        "broken links and missing assets look like successes and never show up as 404s in "
+        "monitoring.",
+        fix="Have the app render its own not-found page, and watch for missing assets with "
+        "client-side error reporting. Turn the fallback off for multi-page sites.",
+        est_monthly_usd_impact=None,
+    )
+
+
 TRAPS: list[TrapFn] = [
     trap_no_outbound_path, trap_interface_endpoints, trap_log_ingestion, trap_public_ipv4,
     trap_internet_egress, trap_no_autoscaling, trap_redis_replica, trap_multi_az_nonprod,
-    trap_container_insights, trap_cross_az,
+    trap_container_insights, trap_cross_az, trap_cloudfront_certificate, trap_spa_fallback,
 ]  # fmt: skip
 
 

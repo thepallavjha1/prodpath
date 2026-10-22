@@ -118,7 +118,7 @@ Ranked by severity, then estimated monthly impact.
 
 ### 4. internet-egress (medium)
 
-**Where:** alb.tf / every web service  
+**Where:** alb.tf / static_site.tf (every service that serves users)  
 **Impact:** about $13.14/month
 
 **Why it bites:** Data transferred out to the internet is billed per GB and scales with traffic and response size. At the spike scenario it is about $65.70/month.

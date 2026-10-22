@@ -122,3 +122,60 @@ def test_output_is_deterministic_and_foundation_comes_first() -> None:
     first, second = choose(services), choose(list(reversed(services)))
     assert first.model_dump_json() == second.model_dump_json()
     assert [c.type for c in first.components][:2] == ["tf-state", "iam-github-oidc"]
+
+
+SITE = [f("framework", "vite"), f("framework", "react")]
+
+
+def test_a_static_site_alone_gets_s3_and_cloudfront_but_no_compute() -> None:
+    arch = choose([svc("web", "static", SITE)])
+    assert types(arch) == {"tf-state", "iam-github-oidc", "s3-site", "cloudfront"}
+    cloudfront = by_name(arch, "cloudfront-web")
+    assert cloudfront.params["build_dir"] == "dist"
+    assert cloudfront.params["spa"] == "true"
+    assert cloudfront.params["price_class"] == "PriceClass_All"
+    assert by_name(arch, "github-oidc-role").serves == ["web"]
+    assert any("us-east-1" in u and "web" in u for u in arch.unknowns)
+    assert any("domain_name" in u for u in arch.unknowns)
+
+
+def test_build_dir_and_spa_follow_the_framework() -> None:
+    gatsby = choose([svc("blog", "static", [f("framework", "gatsby")])])
+    params = by_name(gatsby, "cloudfront-blog").params
+    assert (params["build_dir"], params["spa"]) == ("public", "false")
+    unknown = choose([svc("odd", "static", [f("runtime", "nginx:1.27")])])
+    assert by_name(unknown, "cloudfront-odd").params["build_dir"] == "dist"
+    assert any("build output directory" in u and "odd" in u for u in unknown.unknowns)
+
+
+def test_static_sites_sit_beside_services_without_pulling_in_their_infrastructure() -> None:
+    arch = choose(
+        [
+            svc("api", "web", [*WEB, f("datastore", "postgres")]),
+            svc("site", "static", SITE),
+        ]
+    )
+    assert {"s3-site", "cloudfront", "ecs-service-web", "rds", "alb"} <= types(arch)
+    assert by_name(arch, "github-oidc-role").serves == ["api", "site"]
+    assert by_name(arch, "alb").serves == ["api"]  # the site is not behind the load balancer
+    assert by_name(arch, "vpc").serves == ["api"]
+    assert not any(c.type == "ecr" and "site" in c.serves for c in arch.components)
+    assert not any(c.type == "log-group" and "site" in c.serves for c in arch.components)
+
+
+def test_a_lone_service_plus_a_site_still_uses_app_runner_for_the_service() -> None:
+    arch = choose([svc("api", "web", WEB), svc("site", "static", SITE)])
+    assert {"apprunner", "cloudfront"} <= types(arch)
+    assert not types(arch) & {"vpc", "alb"}
+
+
+def test_static_components_have_reasons_and_evidence() -> None:
+    arch = choose([svc("web", "static", SITE)])
+    for name in ("s3-site-web", "cloudfront-web"):
+        component = by_name(arch, name)
+        assert component.reason.strip() and component.evidence and component.serves == ["web"]
+
+
+def test_static_services_without_facts_are_not_planned() -> None:
+    arch = choose([svc("empty", "static", [])])
+    assert arch.components == []

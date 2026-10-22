@@ -13,7 +13,7 @@ from prodpath.scan import scan_repo
 from tests.helpers import write_files
 
 GOLDEN = Path(__file__).parent / "golden"
-FIXTURE_NAMES = ["mono_a", "mono_b", "mono_c"]
+FIXTURE_NAMES = ["mono_a", "mono_b", "mono_c", "mono_d"]
 FAKE_SECRETS = ["hunter2"]
 
 

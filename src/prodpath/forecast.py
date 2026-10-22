@@ -40,6 +40,12 @@ DEFAULTS: dict[str, tuple[float, str, str]] = {
     "cron_runs_per_month": (30.0, "runs", "Runs per scheduled job per month."),
     "cron_minutes_per_run": (10.0, "min", "Duration of one scheduled job run."),
     "ecr_gb_per_repo": (2.0, "GB", "Image storage per repository."),
+    "site_stored_gb": (0.5, "GB", "Built files stored per static site."),
+    "cdn_cache_hit_ratio": (
+        0.9,
+        "ratio",
+        "Share of static requests answered by CloudFront without reaching S3.",
+    ),
     "hours_per_month": (730.0, "h", "AWS billing convention for a month."),
 }
 # Only these can be overridden for a single service in `[service."<id>"]`.

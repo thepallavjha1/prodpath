@@ -24,7 +24,7 @@ pytestmark = [
 ]
 
 
-@pytest.mark.parametrize("name", ["mono_a", "mono_b", "mono_c"])
+@pytest.mark.parametrize("name", ["mono_a", "mono_b", "mono_c", "mono_d"])
 def test_fixture_terraform_validates(name: str, fixtures_dir: Path, tmp_path: Path) -> None:
     assert TERRAFORM
     provider = AwsProvider()
@@ -43,5 +43,17 @@ def test_kitchen_sink_terraform_validates(env: str, tmp_path: Path) -> None:
     provider = AwsProvider()
     arch = provider.choose(kitchen_sink_system(), Prefs(environment=env))  # type: ignore[arg-type]
     files = format_files(provider.render_iac(arch), TERRAFORM)
+    result = validate_files(files, TERRAFORM, DEFAULT_MIRROR, tmp_path)
+    assert (result.status, result.detail) == ("ok", "configuration is valid")
+
+
+def test_a_static_only_system_validates(tmp_path: Path) -> None:
+    from prodpath.models import SystemModel
+    from tests.helpers import make_fact, make_service
+
+    assert TERRAFORM
+    provider = AwsProvider()
+    system = SystemModel(services=[make_service("web", "static", [make_fact("framework", "vite")])])
+    files = format_files(provider.render_iac(provider.choose(system, Prefs())), TERRAFORM)
     result = validate_files(files, TERRAFORM, DEFAULT_MIRROR, tmp_path)
     assert (result.status, result.detail) == ("ok", "configuration is valid")

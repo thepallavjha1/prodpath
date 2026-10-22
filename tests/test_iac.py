@@ -13,7 +13,7 @@ from prodpath.providers.aws.iac import iac_gaps, render_iac, tf_id
 from tests.helpers import build_system, kitchen_sink_system, make_fact, make_service
 
 GOLDEN = Path(__file__).parent / "golden" / "terraform"
-FIXTURE_NAMES = ["mono_a", "mono_b", "mono_c"]
+FIXTURE_NAMES = ["mono_a", "mono_b", "mono_c", "mono_d"]
 TERRAFORM = shutil.which("terraform")
 PROVIDER = AwsProvider()
 
@@ -199,3 +199,53 @@ def test_rendering_is_deterministic() -> None:
 )
 def test_tf_id_is_a_valid_identifier(name: str, expected: str) -> None:
     assert tf_id(name) == expected
+
+
+def static_files() -> dict[str, str]:
+    return render_iac(arch_for(kitchen_sink_system()))
+
+
+def test_each_static_site_gets_a_private_bucket_and_a_cloudfront_distribution() -> None:
+    text = static_files()["static_site.tf"]
+    for site in ("landing", "docs"):
+        assert f'resource "aws_s3_bucket" "site_{site}"' in text
+        assert f'resource "aws_cloudfront_origin_access_control" "site_{site}"' in text
+        assert f'resource "aws_cloudfront_distribution" "site_{site}"' in text
+        assert f'aliases             = ["{site}.${{var.domain_name}}"]' in text
+    assert text.count("redirect-to-https") == 2
+    assert text.count('minimum_protocol_version = "TLSv1.2_2021"') == 2
+    assert text.count('variable = "AWS:SourceArn"') == 2  # only the distribution can read
+
+
+def test_only_single_page_apps_get_the_index_html_fallback() -> None:
+    text = static_files()["static_site.tf"]
+    plain, spa = text.split("# ---- landing")  # sites are sorted: docs, then landing (vite)
+    assert spa.count("custom_error_response") == 2
+    assert "custom_error_response" not in plain
+
+
+def test_static_sites_need_a_domain_and_a_us_east_1_certificate_variable() -> None:
+    files = static_files()
+    assert 'variable "site_certificate_arn"' in files["variables.tf"]
+    assert "us-east-1" in files["variables.tf"]
+    assert 'variable "domain_name"' in files["variables.tf"]
+    assert files["variables.tf"].count('variable "domain_name"') == 1  # shared with the ALB
+    assert "site_certificate_arn" in files["terraform.tfvars.example"]
+
+
+def test_deploy_role_can_sync_each_site_and_invalidate_only_its_distribution() -> None:
+    text = static_files()["github_oidc.tf"]
+    for site in ("landing", "docs"):
+        assert f"aws_s3_bucket.site_{site}.arn" in text
+        assert f"aws_cloudfront_distribution.site_{site}.arn" in text
+    assert "cloudfront:CreateInvalidation" in text and "s3:DeleteObject" in text
+
+
+def test_a_static_only_system_renders_no_compute_network_or_empty_ecr_statements() -> None:
+    system = SystemModel(services=[make_service("web", "static", [make_fact("framework", "vite")])])
+    files = render_iac(arch_for(system))
+    assert not {"network.tf", "ecs.tf", "alb.tf", "ecr.tf", "iam.tf", "rds.tf"} & set(files)
+    assert {"static_site.tf", "github_oidc.tf", "outputs.tf", "variables.tf"} <= set(files)
+    assert "ecr:" not in files["github_oidc.tf"]  # no empty Resource list for a missing ECR repo
+    assert "site_distributions" in files["outputs.tf"] and "site_buckets" in files["outputs.tf"]
+    assert find_violations(files) == []

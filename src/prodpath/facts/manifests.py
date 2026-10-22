@@ -22,6 +22,20 @@ KNOWN_PACKAGES: dict[str, tuple[FactKind, str]] = {
     "fastify": ("framework", "fastify"),
     "next": ("framework", "next.js"),
     "@nestjs/core": ("framework", "nestjs"),
+    # Frontends (Phase 7). Build tools usually sit in devDependencies; see FRONTEND_DEV_TOOLS.
+    "react": ("framework", "react"),
+    "vue": ("framework", "vue"),
+    "vite": ("framework", "vite"),
+    "react-scripts": ("framework", "create-react-app"),
+    "@vue/cli-service": ("framework", "vue-cli"),
+    "@angular/cli": ("framework", "angular"),
+    "@angular/core": ("framework", "angular"),
+    "astro": ("framework", "astro"),
+    "gatsby": ("framework", "gatsby"),
+    "@docusaurus/core": ("framework", "docusaurus"),
+    "vitepress": ("framework", "vitepress"),
+    "vuepress": ("framework", "vuepress"),
+    "@sveltejs/adapter-static": ("framework", "sveltekit-static"),
     "gunicorn": ("runtime", "gunicorn"),
     "uvicorn": ("runtime", "uvicorn"),
     "psycopg2": ("datastore", "postgres"),
@@ -59,6 +73,14 @@ KNOWN_PACKAGES: dict[str, tuple[FactKind, str]] = {
     "axios": ("external_call", "http-client"),
     "node-fetch": ("external_call", "http-client"),
 }
+
+
+# Only these are read from devDependencies: production dependencies shape the deployment, but
+# a frontend's build tool is a dev dependency and is exactly what makes it a static site.
+FRONTEND_DEV_TOOLS = {
+    "vite", "react-scripts", "@vue/cli-service", "@angular/cli", "astro", "gatsby",
+    "@docusaurus/core", "vitepress", "vuepress", "@sveltejs/adapter-static", "next",
+}  # fmt: skip
 
 
 def classify_package(name: str) -> tuple[FactKind, str] | None:
@@ -125,6 +147,7 @@ def extract_package_json(path: str, source: str) -> list[Fact]:
     names: list[str] = []
     for section in ("dependencies", "optionalDependencies"):
         names += list(data.get(section, {}))
+    names += [n for n in data.get("devDependencies", {}) if n in FRONTEND_DEV_TOOLS]
     # Quote the name so 'pg' does not match inside '"pg-pool"'.
     return _facts_for_quoted(names, path, source.splitlines())
 

@@ -113,7 +113,7 @@ def test_mono_c_matches_the_hand_computed_forecast(fixtures_dir: Path, tmp_path:
     assert "apps-gateway->apps-billing" in inferred[0].note
 
 
-@pytest.fixture(params=["mono_a", "mono_b", "mono_c"])
+@pytest.fixture(params=["mono_a", "mono_b", "mono_c", "mono_d"])
 def fixture_forecast(
     request: pytest.FixtureRequest, fixtures_dir: Path, tmp_path: Path
 ) -> Forecast:
@@ -221,3 +221,84 @@ def test_components_without_a_price_model_are_listed(tmp_path: Path) -> None:
 def test_nat_gateway_and_free_tiers_are_declared_out_of_scope(fixture_forecast: Forecast) -> None:
     text = " ".join(fixture_forecast.not_included)
     assert "NAT gateway" in text and "free" in text.lower()
+
+
+def test_mono_d_matches_the_hand_computed_forecast(fixtures_dir: Path, tmp_path: Path) -> None:
+    """Mixed monorepo: Flask API + Postgres, SSR Next dashboard, and three static sites
+    (Vite SPA, exported Next, nginx docs). Extra test prices: CloudFront data out 0.10/GB and
+    0.000001 per HTTPS request (India edge, the ap-south-1 geography); static defaults:
+    0.5 GB stored per site, 90% cache hit ratio, 1 req/s and 10 KB per request per site.
+
+    Compute and data (2 web services, 2 tasks each):
+      Fargate 2 x 36.50 = 73.00; ALB 14.60 + IPv4 7.30; endpoints 4 x 2 x 730 x 0.01 = 58.40;
+      RDS 73.00 + 4.00 = 77.00; secrets (1 slot + 1 managed) 1.00 + 60 calls x 0.00001 = 1.0006;
+      ECR 2 x 2 GB x 0.10 = 0.40 -> constants 231.7006 + static storage 3 x 0.5 x 0.02 = 0.03
+    Traffic, expected: LCU (2 req/s: max(0.08, 0.072) x 730 x 0.01) = 0.584;
+      logs 2 x 2.78568 = 5.57136; endpoint data 10.512 GB x 0.01 = 0.10512;
+      internet egress 52.56 GB x 0.10 = 5.256
+    Static, per site: requests 2,628,000 x 0.000001 = 2.628; data out 26.28 GB x 0.10 = 2.628;
+      S3 GET misses 262,800 x 0.000001 = 0.2628 -> 5.5188 x 3 = 16.5564 (+ storage counted above)
+    Expected = 231.7306 + 0.584 + 5.57136 + 0.10512 + 5.256 + 16.5564 = 259.80348
+    Low (0.25x): 231.7306 + 0.146 + 1.39284 + 0.02628 + 1.314 + 3 x 1.3797 = 238.74882
+    Spike (5x): 231.7306 + 2.92 + 27.8568 + 0.5256 + 26.28 + 3 x 27.594 = 372.095
+    """
+    forecast = forecast_for(build_system(fixtures_dir / "mono_d", tmp_path))
+    assert forecast.total_low == pytest.approx(238.74882, **APPROX)
+    assert forecast.total_expected == pytest.approx(259.80348, **APPROX)
+    assert forecast.total_spike == pytest.approx(372.095, **APPROX)
+    assert forecast.not_priced == []
+    geography = [a for a in forecast.assumptions if a.name == "cloudfront_edge_geography"]
+    assert geography and geography[0].source == "inferred" and "IN" in geography[0].note
+
+
+def test_static_site_lines_use_the_edge_geography_prices_and_scale_with_traffic(
+    fixtures_dir: Path, tmp_path: Path
+) -> None:
+    forecast = forecast_for(build_system(fixtures_dir / "mono_d", tmp_path))
+    data_out = line(forecast, "cloudfront-apps-spa", "data transfer out")
+    assert data_out.price_ref == "TEST/cloudfront.out_gb.in/cloudfront.out_gb.in"
+    assert data_out.qty_expected == pytest.approx(26.28)
+    assert data_out.usd_low == pytest.approx(data_out.usd_expected * 0.25)
+    assert data_out.usd_spike == pytest.approx(data_out.usd_expected * 5)
+    requests = line(forecast, "cloudfront-apps-spa", "HTTPS requests")
+    assert requests.price_ref.endswith("cloudfront.requests_https.in")
+    storage = line(forecast, "s3-site-apps-spa", "storage")
+    assert storage.usd_low == storage.usd_expected == storage.usd_spike == pytest.approx(0.01)
+
+
+def test_a_higher_cache_hit_ratio_removes_s3_origin_requests(
+    fixtures_dir: Path, tmp_path: Path
+) -> None:
+    system = build_system(fixtures_dir / "mono_d", tmp_path)
+    base = forecast_for(system)
+    perfect = forecast_for(system, UsageBook({"cdn_cache_hit_ratio": 1.0}))
+    assert line(base, "s3-site-apps-spa", "GET").usd_expected == pytest.approx(0.2628)
+    assert line(perfect, "s3-site-apps-spa", "GET").usd_expected == 0.0
+    ratio = next(a for a in perfect.assumptions if a.name == "cdn_cache_hit_ratio")
+    assert (ratio.value, ratio.source) == (1.0, "user")
+
+
+def test_the_edge_geography_follows_the_aws_region() -> None:
+    from prodpath.providers.aws.costs import edge_geography
+
+    expected = {
+        "ap-south-1": "in", "ap-northeast-1": "jp", "ap-southeast-2": "au", "ap-southeast-1": "ap",
+        "eu-west-1": "eu", "us-east-1": "us", "ca-central-1": "ca", "sa-east-1": "sa",
+        "me-south-1": "me", "af-south-1": "za", "mars-north-1": "us",
+    }  # fmt: skip
+    assert {region: edge_geography(region) for region in expected} == expected
+
+
+def test_missing_cloudfront_prices_are_listed_not_guessed(
+    fixtures_dir: Path, tmp_path: Path
+) -> None:
+    system = build_system(fixtures_dir / "mono_d", tmp_path)
+    provider = AwsProvider(PRICES)
+    arch = provider.choose(system, Prefs())
+    del provider.price_book("ap-south-1")._prices["cloudfront.out_gb.in"]
+    forecast = provider.forecast(arch, system, UsageBook())
+    assert any(
+        "cloudfront-apps-spa" in item and "cloudfront.out_gb.in" in item
+        for item in forecast.not_priced
+    )
+    assert not any(ln.dimension == "data transfer out" for ln in forecast.lines)

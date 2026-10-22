@@ -14,7 +14,7 @@ from tests.helpers import build_system
 
 PRICES = Path(__file__).parent / "fixtures" / "prices"
 GOLDEN = Path(__file__).parent / "golden"
-FIXTURE_NAMES = ["mono_a", "mono_b", "mono_c"]
+FIXTURE_NAMES = ["mono_a", "mono_b", "mono_c", "mono_d"]
 STAMP = "2000-01-01T00:00:00Z"
 
 

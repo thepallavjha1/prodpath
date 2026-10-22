@@ -71,7 +71,7 @@ variable "certificate_arn" {
 }
 
 variable "domain_name" {
-  description = "Base domain. Each web service is routed by host: <service-id>.<domain_name>."
+  description = "Base domain. Each web service and static site is served at <service-id>.<domain_name>."
   type        = string
 }
 

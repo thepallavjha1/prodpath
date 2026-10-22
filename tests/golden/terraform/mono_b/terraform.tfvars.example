@@ -8,6 +8,7 @@ image_tags = {
 }
 
 certificate_arn = "<ACM_CERTIFICATE_ARN>"
-domain_name     = "<YOUR_DOMAIN>"
+
+domain_name = "<YOUR_DOMAIN>"
 
 github_repo = "<ORG>/<REPO>"

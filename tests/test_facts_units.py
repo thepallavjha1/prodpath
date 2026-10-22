@@ -150,3 +150,33 @@ def test_compose_ports_env_and_infra_usage() -> None:
 def test_invalid_compose_raises() -> None:
     with pytest.raises(ExtractionError):
         compose.extract("docker-compose.yml", "services: [unclosed")
+
+
+def test_frontend_build_tools_in_dev_dependencies_become_framework_facts() -> None:
+    source = (
+        '{"dependencies": {"react": "18", "pg": "8"}, '
+        '"devDependencies": {"vite": "5", "koa": "2", "eslint": "9"}}'
+    )
+    facts = manifests.extract_package_json("package.json", source)
+    assert pairs(facts) == {
+        ("framework", "react"),
+        ("framework", "vite"),
+        ("datastore", "postgres"),
+    }  # koa is a dev dependency and not a frontend tool; eslint is unknown
+
+
+def test_each_static_site_generator_is_named() -> None:
+    names = {
+        "react-scripts": "create-react-app",
+        "@vue/cli-service": "vue-cli",
+        "@angular/cli": "angular",
+        "astro": "astro",
+        "gatsby": "gatsby",
+        "@docusaurus/core": "docusaurus",
+        "next": "next.js",
+    }
+    for package, value in names.items():
+        facts = manifests.extract_package_json(
+            "package.json", f'{{"devDependencies": {{"{package}": "1"}}}}'
+        )
+        assert ("framework", value) in pairs(facts), package

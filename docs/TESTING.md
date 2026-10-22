@@ -20,6 +20,7 @@ Small synthetic repos, committed. Never real customer code.
 - `mono_a/`: one Flask service + Postgres
 - `mono_b/`: FastAPI + Celery worker + Redis + docker-compose
 - `mono_c/`: 6+ services, Python and Node, pnpm workspace, shared libs, one cron job, one service with local file writes
+- `mono_d/`: mixed frontends: Vite+React SPA, Next.js with static export, SSR Next.js, an nginx-served docs site, and a Flask API with Postgres (Phase 7)
 - Add a fixture for each bug found on the real monorepo (reduced to the minimal reproduction).
 
 ## 3. Golden files (`tests/golden/`)

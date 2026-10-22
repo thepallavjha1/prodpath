@@ -12,7 +12,8 @@ image_tags = {
 }
 
 certificate_arn = "<ACM_CERTIFICATE_ARN>"
-domain_name     = "<YOUR_DOMAIN>"
+
+domain_name = "<YOUR_DOMAIN>"
 
 schedule_expressions = {
   "apps-reports" = "cron(0 2 * * ? *)" # example only: replace with the real schedule

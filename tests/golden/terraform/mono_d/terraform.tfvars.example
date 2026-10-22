@@ -1,0 +1,17 @@
+# Copy to terraform.tfvars and fill in the <PLACEHOLDERS>. Never commit real secrets here.
+app_name = "<APP_NAME>"
+
+# Git SHA of the image to run for each service (build and push first, see README.md).
+image_tags = {
+  "apps-api" = "<GIT_SHA>"
+  "apps-dashboard" = "<GIT_SHA>"
+}
+
+certificate_arn = "<ACM_CERTIFICATE_ARN>"
+
+domain_name = "<YOUR_DOMAIN>"
+
+# Must be an ACM certificate in us-east-1 covering <service-id>.<YOUR_DOMAIN> for every site.
+site_certificate_arn = "<ACM_CERTIFICATE_ARN_IN_US_EAST_1>"
+
+github_repo = "<ORG>/<REPO>"

@@ -184,6 +184,10 @@ def test_elasticache_nodes_by_engine_without_extended_support() -> None:
     }
 
 
+def cloudfront(usagetype: str, usd: str, unit: str) -> tuple[str, dict[str, str], list[Tier], str]:
+    return (f"CF-{usagetype}", {"usagetype": usagetype}, [("0", "Inf", usd)], unit)
+
+
 def all_offers() -> dict[str, dict[str, Any]]:
     """One synthetic offer file per real offer, holding a SKU for every spec we model."""
     by_offer: dict[str, list[tuple[str, dict[str, str], list[Tier], str]]] = {o: [] for o in OFFERS}
@@ -195,6 +199,10 @@ def all_offers() -> dict[str, dict[str, Any]]:
             (f"SKU{index}", attrs, [("0", "Inf", f"{index + 1}.5")], "unit")
         )
     by_offer["AmazonRDS"].append(rds("RDS1", "APS3-InstanceUsage:db.t4g.small", "MySQL", "0.04"))
+    by_offer["AmazonCloudFront"].append(cloudfront("IN-DataTransfer-Out-Bytes", "0.109", "GB"))
+    by_offer["AmazonCloudFront"].append(
+        cloudfront("IN-Requests-Tier2-HTTPS", "0.0000012", "Requests")
+    )
     by_offer["AmazonElastiCache"].append(
         (
             "EC1",
@@ -212,7 +220,7 @@ def test_update_prices_downloads_every_offer_from_the_price_list_host_only(tmp_p
 
     def respond(request: httpx.Request) -> httpx.Response:
         requested.append(request.url)
-        name = request.url.path.split("/")[-4]
+        name = request.url.path.split("/")[4]  # /offers/v1.0/aws/<offer>/current/...
         return httpx.Response(200, json=served[name])
 
     client = httpx.Client(transport=httpx.MockTransport(respond))
@@ -220,8 +228,11 @@ def test_update_prices_downloads_every_offer_from_the_price_list_host_only(tmp_p
 
     assert path == tmp_path / "ap-south-1.json"
     assert {u.host for u in requested} == {"pricing.us-east-1.amazonaws.com"}
-    assert sorted(u.path.split("/")[-4] for u in requested) == sorted(OFFERS)
-    assert all(u.path.endswith("/current/ap-south-1/index.json") for u in requested)
+    assert sorted(u.path.split("/")[4] for u in requested) == sorted(OFFERS)
+    regional = [u for u in requested if "AmazonCloudFront" not in u.path]
+    assert all(u.path.endswith("/current/ap-south-1/index.json") for u in regional)
+    (cloudfront_url,) = [u for u in requested if "AmazonCloudFront" in u.path]
+    assert cloudfront_url.path == "/offers/v1.0/aws/AmazonCloudFront/current/index.json"  # global
     book = PriceBook.load(path)
     assert book.missing == {}
     assert book.get("fargate.vcpu_hour") is not None
@@ -258,3 +269,37 @@ def test_committed_test_snapshot_is_clearly_labelled_and_loadable() -> None:
     book = PriceBook.load(Path(__file__).parent / "fixtures" / "prices" / "ap-south-1.json")
     assert book.count >= 30
     assert all(p.description.startswith("TEST ONLY") for p in book._prices.values())
+
+
+def test_cloudfront_prices_are_keyed_by_edge_geography_and_use_the_first_paid_tier() -> None:
+    def priced(
+        usagetype: str, tiers: list[Tier], unit: str
+    ) -> tuple[str, dict[str, str], list[Tier], str]:
+        return (f"S-{usagetype}", {"usagetype": usagetype}, tiers, unit)
+
+    data = offer(
+        "v1",
+        [
+            priced(
+                "IN-DataTransfer-Out-Bytes",
+                [("0", "10240", "0.109"), ("10240", "51200", "0.085")],
+                "GB",
+            ),
+            priced("IN-Requests-Tier2-HTTPS", [("0", "Inf", "0.0000012")], "Requests"),
+            priced("US-DataTransfer-Out-Bytes", [("0", "10240", "0.085")], "GB"),
+            priced("Global-DataTransfer-Out-Bytes", [("0", "1024", "0.0")], "GB"),
+            priced("APS3-Requests-OriginShield", [("0", "Inf", "0.0000009")], "Requests"),
+            priced("IN-Requests-Tier2-HTTP", [("0", "Inf", "0.0000010")], "Requests"),
+        ],
+    )
+    prices, missing = extract_offer("AmazonCloudFront", data)
+    assert {k: v.usd for k, v in prices.items()} == {
+        "cloudfront.out_gb.in": 0.109,
+        "cloudfront.requests_https.in": 0.0000012,
+        "cloudfront.out_gb.us": 0.085,
+    }  # no Global free tier, no Origin Shield, no plain-HTTP requests
+    assert missing == {}
+    assert (
+        prices["cloudfront.out_gb.in"].ref
+        == "AmazonCloudFront/S-IN-DataTransfer-Out-Bytes/S-IN-DataTransfer-Out-Bytes.TERM.0"
+    )

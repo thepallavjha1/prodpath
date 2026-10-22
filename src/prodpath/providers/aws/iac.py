@@ -17,7 +17,7 @@ TEMPLATE_DIR = Path(__file__).parent / "templates"
 COMPUTE_TYPES = {"ecs-service-web", "ecs-service-worker", "scheduled-task"}
 GENERATED_TYPES = {
     "tf-state", "iam-github-oidc", "vpc", "ecs-cluster", "alb", "ecr", "rds", "sqs", "sns", "s3",
-    "secrets", "log-group", "iam-task-role", *COMPUTE_TYPES,
+    "secrets", "log-group", "iam-task-role", "s3-site", "cloudfront", *COMPUTE_TYPES,
 }  # fmt: skip
 DB_PORTS = {"postgres": 5432, "mysql": 3306}
 DEFAULT_WEB_PORT = 8080
@@ -26,7 +26,8 @@ AZ_COUNT = 2  # subnets and endpoint ENIs per AZ; the network template creates t
 TEMPLATES = [
     "versions.tf", "backend.tf", "main.tf", "variables.tf", "network.tf", "ecr.tf", "iam.tf",
     "secrets.tf", "ecs.tf", "alb.tf", "rds.tf", "elasticache.tf", "messaging.tf", "s3.tf",
-    "scheduler.tf", "github_oidc.tf", "outputs.tf", "terraform.tfvars.example", "README.md",
+    "scheduler.tf", "static_site.tf", "github_oidc.tf", "outputs.tf", "terraform.tfvars.example",
+    "README.md",
 ]  # fmt: skip
 
 # Autoescape is off on purpose: the output is HCL, not HTML.
@@ -139,6 +140,17 @@ def build_context(arch: Architecture) -> dict[str, Any]:
         for c in arch.components
         if c.type == "s3"
     ]
+    static_sites = [
+        {
+            "id": c.serves[0],
+            "tf": tf_id(c.serves[0]),
+            "build_dir": c.params["build_dir"],
+            "spa": c.params["spa"] == "true",
+            "price_class": c.params["price_class"],
+        }
+        for c in arch.components
+        if c.type == "cloudfront"
+    ]
     return {
         "region": arch.region,
         "environment": arch.environment,
@@ -158,6 +170,7 @@ def build_context(arch: Architecture) -> dict[str, Any]:
         "sqs": messaging["sqs"],
         "sns": messaging["sns"],
         "buckets": buckets,
+        "static_sites": sorted(static_sites, key=lambda site: site["id"]),
     }
 
 

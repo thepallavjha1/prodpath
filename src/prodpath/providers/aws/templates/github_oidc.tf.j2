@@ -1,4 +1,4 @@
-{% if has_github and services %}
+{% if has_github and (services or static_sites) %}
 # One GitHub OIDC provider is allowed per account: set create_github_oidc_provider = false if it exists.
 resource "aws_iam_openid_connect_provider" "github" {
   count = var.create_github_oidc_provider ? 1 : 0
@@ -47,6 +47,7 @@ resource "aws_iam_role_policy" "github_actions" {
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
+{% if services %}
       {
         # ecr:GetAuthorizationToken does not support resource-level permissions, so "*" is required.
         Effect   = "Allow"
@@ -69,6 +70,7 @@ resource "aws_iam_role_policy" "github_actions" {
 {% endfor %}
         ]
       },
+{% endif %}
 {% if has_cluster %}
       {
         # RegisterTaskDefinition and DescribeTaskDefinition do not support resource-level permissions.
@@ -96,6 +98,23 @@ resource "aws_iam_role_policy" "github_actions" {
         ]
       },
 {% endif %}
+{% for s in static_sites %}
+      {
+        Effect   = "Allow"
+        Action   = ["s3:ListBucket"]
+        Resource = [aws_s3_bucket.site_{{ s.tf }}.arn]
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["s3:PutObject", "s3:DeleteObject"]
+        Resource = ["${aws_s3_bucket.site_{{ s.tf }}.arn}/*"]
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["cloudfront:CreateInvalidation"]
+        Resource = [aws_cloudfront_distribution.site_{{ s.tf }}.arn]
+      },
+{% endfor %}
     ]
   })
 }

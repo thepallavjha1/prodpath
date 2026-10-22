@@ -19,7 +19,8 @@ SECRET_NAME = re.compile(
 )
 TYPE_ORDER = [
     "tf-state", "iam-github-oidc", "vpc", "ecs-cluster", "alb", "ecr", "rds", "documentdb",
-    "dynamodb", "elasticache", "sqs", "sns", "amazon-mq", "msk", "s3", "secrets", "log-group",
+    "dynamodb", "elasticache", "sqs", "sns", "amazon-mq", "msk", "s3", "s3-site", "cloudfront",
+    "secrets", "log-group",
     "iam-task-role", "apprunner", "ecs-service-web", "ecs-service-worker", "scheduled-task",
 ]  # fmt: skip
 
@@ -29,6 +30,7 @@ class Context:
     system: SystemModel
     prefs: Prefs
     deployable: list[Service]
+    static_sites: list[Service] = field(default_factory=list)
     unknowns: list[str] = field(default_factory=list)
 
     @property
@@ -90,7 +92,8 @@ def _service_evidence(services: list[Service]) -> list[Evidence]:
 
 
 def rule_foundation(ctx: Context) -> list[Component]:
-    everyone = [s.id for s in ctx.deployable]
+    compute_ids = [s.id for s in ctx.deployable]
+    everyone = sorted([*compute_ids, *(s.id for s in ctx.static_sites)])
     components = [
         Component(
             type="tf-state",
@@ -109,8 +112,8 @@ def rule_foundation(ctx: Context) -> list[Component]:
             serves=everyone,
         ),
     ]
-    if _uses_app_runner(ctx):
-        return components
+    if not ctx.deployable or _uses_app_runner(ctx):
+        return components  # static sites alone, or one simple service, need no network
     return components + [
         Component(
             type="vpc",
@@ -118,7 +121,7 @@ def rule_foundation(ctx: Context) -> list[Component]:
             sizing="2 AZs, public + private subnets, S3 and ECR VPC endpoints",
             reason="Containers and data stores run in private subnets; endpoints avoid NAT data "
             "charges for image pulls and S3 traffic.",
-            serves=everyone,
+            serves=compute_ids,
             evidence=_service_evidence(ctx.deployable),
         ),
         Component(
@@ -126,7 +129,7 @@ def rule_foundation(ctx: Context) -> list[Component]:
             name="ecs-cluster",
             sizing="1 Fargate-only cluster",
             reason="One cluster runs every container service; Fargate means no servers to patch.",
-            serves=everyone,
+            serves=compute_ids,
             evidence=_service_evidence(ctx.deployable),
         ),
     ]
@@ -139,6 +142,70 @@ def _port_items(service: Service, ctx: Context) -> list[str]:
         ctx.unknowns.append(f"{service.id}: no listening port found; set the container port.")
     items += [f"health:{f.value}" for f in _facts(service, "health_endpoint")][:1]
     return items
+
+
+# Conventional build output directory per frontend framework (first match in this order wins).
+BUILD_DIRS = {
+    "next.js": "out",
+    "vite": "dist",
+    "create-react-app": "build",
+    "vue-cli": "dist",
+    "angular": "dist",
+    "astro": "dist",
+    "gatsby": "public",
+    "docusaurus": "build",
+    "vitepress": ".vitepress/dist",
+    "vuepress": "docs/.vuepress/dist",
+    "sveltekit-static": "build",
+}
+# Client-routed apps need every unknown path answered with /index.html.
+SPA_FRAMEWORKS = {"vite", "create-react-app", "vue-cli", "angular"}
+DEFAULT_BUILD_DIR = "dist"
+
+
+def rule_static(ctx: Context) -> list[Component]:
+    components = []
+    for site in ctx.static_sites:
+        frameworks = {f.value for f in _facts(site, "framework")}
+        known = next((name for name in BUILD_DIRS if name in frameworks), None)
+        build_dir = BUILD_DIRS[known] if known else DEFAULT_BUILD_DIR
+        spa = bool(frameworks & SPA_FRAMEWORKS)
+        anchor = [(site, _anchor(site))]
+        bucket = _component(
+            "s3-site",
+            f"s3-site-{site.id}",
+            "private bucket, encryption on, versioning on",
+            f"Holds the built files of {site.id}; only CloudFront can read them.",
+            anchor,
+        )
+        cdn = _component(
+            "cloudfront",
+            f"cloudfront-{site.id}",
+            "1 distribution, HTTPS only, TLS 1.2+, compression, PriceClass_All",
+            f"{site.id} is a static build: a CDN in front of S3 gives HTTPS, caching and low "
+            "latency with no servers to run.",
+            anchor,
+        )
+        bucket.items = [f"build:{build_dir}"]
+        cdn.items = [f"build:{build_dir}"]
+        params = {"build_dir": build_dir, "spa": "true" if spa else "false"}
+        bucket.params = dict(params)
+        cdn.params = {**params, "price_class": "PriceClass_All"}
+        components += [bucket, cdn]
+        ctx.unknowns.append(
+            f"{site.id}: needs a domain (served at {site.id}.<domain_name>) and a CloudFront "
+            "ACM certificate created in us-east-1, which Terraform does not create."
+        )
+        if known is None:
+            ctx.unknowns.append(
+                f"{site.id}: build output directory not detected; assumed {DEFAULT_BUILD_DIR}."
+            )
+        if spa:
+            ctx.unknowns.append(
+                f"{site.id}: assumed a single-page app (403/404 answered with /index.html); "
+                "turn the fallback off for multi-page sites."
+            )
+    return components
 
 
 def rule_compute(ctx: Context) -> list[Component]:
@@ -426,6 +493,7 @@ def _fill_params(ctx: Context, components: list[Component]) -> None:
 RULES: list[Rule] = [
     rule_foundation,
     rule_compute,
+    rule_static,
     rule_datastores,
     rule_cache_and_queues,
     rule_storage_and_secrets,
@@ -440,6 +508,9 @@ def choose_architecture(system: SystemModel, prefs: Prefs) -> Architecture:
             (s for s in system.services if s.kind in DEPLOYABLE_KINDS and s.facts),
             key=lambda s: s.id,
         ),
+        static_sites=sorted(
+            (s for s in system.services if s.kind == "static" and s.facts), key=lambda s: s.id
+        ),
     )
     for service in system.services:
         if service.kind == "unknown" and service.facts:
@@ -447,7 +518,7 @@ def choose_architecture(system: SystemModel, prefs: Prefs) -> Architecture:
                 f"{service.id}: could not be classified (web, worker or cron); not planned."
             )
     components: list[Component] = []
-    if ctx.deployable:
+    if ctx.deployable or ctx.static_sites:
         for rule in RULES:
             components += rule(ctx)
         ctx.unknowns.append(

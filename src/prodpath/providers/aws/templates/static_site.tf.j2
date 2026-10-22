@@ -1,0 +1,127 @@
+{% if static_sites %}
+# AWS-managed cache policy: cache by default, compress, and respect the origin's headers.
+data "aws_cloudfront_cache_policy" "optimized" {
+  name = "Managed-CachingOptimized"
+}
+
+{% endif %}
+{% for s in static_sites %}
+# ---- {{ s.id }} (static site, build output in {{ s.build_dir }}) ----
+resource "aws_s3_bucket" "site_{{ s.tf }}" {
+  bucket_prefix = substr("${local.name}-site-{{ s.id }}-", 0, 37)
+}
+
+resource "aws_s3_bucket_public_access_block" "site_{{ s.tf }}" {
+  bucket                  = aws_s3_bucket.site_{{ s.tf }}.id
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "site_{{ s.tf }}" {
+  bucket = aws_s3_bucket.site_{{ s.tf }}.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+resource "aws_s3_bucket_versioning" "site_{{ s.tf }}" {
+  bucket = aws_s3_bucket.site_{{ s.tf }}.id
+
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+# CloudFront signs its requests to S3, so the bucket stays private.
+resource "aws_cloudfront_origin_access_control" "site_{{ s.tf }}" {
+  name                              = substr("${local.name}-{{ s.id }}", 0, 64)
+  origin_access_control_origin_type = "s3"
+  signing_behavior                  = "always"
+  signing_protocol                  = "sigv4"
+}
+
+resource "aws_cloudfront_distribution" "site_{{ s.tf }}" {
+  enabled             = true
+  is_ipv6_enabled     = true
+  default_root_object = "index.html"
+  aliases             = ["{{ s.id }}.${var.domain_name}"]
+  price_class         = "{{ s.price_class }}"
+
+  origin {
+    domain_name              = aws_s3_bucket.site_{{ s.tf }}.bucket_regional_domain_name
+    origin_id                = "site"
+    origin_access_control_id = aws_cloudfront_origin_access_control.site_{{ s.tf }}.id
+  }
+
+  default_cache_behavior {
+    target_origin_id       = "site"
+    viewer_protocol_policy = "redirect-to-https"
+    allowed_methods        = ["GET", "HEAD", "OPTIONS"]
+    cached_methods         = ["GET", "HEAD"]
+    compress               = true
+    cache_policy_id        = data.aws_cloudfront_cache_policy.optimized.id
+  }
+{% if s.spa %}
+
+  # Single-page app: unknown paths are client-side routes, so answer them with the app shell.
+  custom_error_response {
+    error_code            = 403
+    response_code         = 200
+    response_page_path    = "/index.html"
+    error_caching_min_ttl = 0
+  }
+
+  custom_error_response {
+    error_code            = 404
+    response_code         = 200
+    response_page_path    = "/index.html"
+    error_caching_min_ttl = 0
+  }
+{% endif %}
+
+  restrictions {
+    geo_restriction {
+      restriction_type = "none"
+    }
+  }
+
+  # The certificate must be in us-east-1 for CloudFront, whatever region this stack uses.
+  viewer_certificate {
+    acm_certificate_arn      = var.site_certificate_arn
+    ssl_support_method       = "sni-only"
+    minimum_protocol_version = "TLSv1.2_2021"
+  }
+}
+
+data "aws_iam_policy_document" "site_{{ s.tf }}" {
+  statement {
+    actions   = ["s3:GetObject"]
+    resources = ["${aws_s3_bucket.site_{{ s.tf }}.arn}/*"]
+
+    principals {
+      type        = "Service"
+      identifiers = ["cloudfront.amazonaws.com"]
+    }
+
+    # Only this distribution may read the bucket.
+    condition {
+      test     = "StringEquals"
+      variable = "AWS:SourceArn"
+      values   = [aws_cloudfront_distribution.site_{{ s.tf }}.arn]
+    }
+  }
+}
+
+resource "aws_s3_bucket_policy" "site_{{ s.tf }}" {
+  bucket = aws_s3_bucket.site_{{ s.tf }}.id
+  policy = data.aws_iam_policy_document.site_{{ s.tf }}.json
+
+  depends_on = [aws_s3_bucket_public_access_block.site_{{ s.tf }}]
+}
+
+{% endfor %}

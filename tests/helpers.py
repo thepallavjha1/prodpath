@@ -46,7 +46,7 @@ def build_system(repo: Path, tmp: Path) -> SystemModel:
 
 
 def kitchen_sink_system() -> SystemModel:
-    """Every component type the templates know, plus two that have no template yet."""
+    """Every component type the templates know (two static sites included), plus two without."""
     env = ["DATABASE_URL", "API_TOKEN", "PORT", "LOG_LEVEL"]
     shop = [
         make_fact("port", "8000"),
@@ -78,5 +78,11 @@ def kitchen_sink_system() -> SystemModel:
             make_service("jobs", "worker", jobs),
             make_service("nightly", "cron", [make_fact("runtime", "python:3.12")]),
             make_service("admin", "web", admin),
+            make_service(
+                "landing",
+                "static",
+                [make_fact("framework", "vite"), make_fact("framework", "react")],
+            ),
+            make_service("docs", "static", [make_fact("framework", "docusaurus")]),
         ]
     )

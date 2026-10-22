@@ -71,9 +71,18 @@ variable "certificate_arn" {
   description = "ARN of the ACM certificate for the HTTPS listener (in the same region)."
   type        = string
 }
+{% endif %}
+{% if has_alb or static_sites %}
 
 variable "domain_name" {
-  description = "Base domain. Each web service is routed by host: <service-id>.<domain_name>."
+  description = "Base domain. Each web service and static site is served at <service-id>.<domain_name>."
+  type        = string
+}
+{% endif %}
+{% if static_sites %}
+
+variable "site_certificate_arn" {
+  description = "ARN of the ACM certificate for the static sites. CloudFront requires it to be in us-east-1, whatever region this stack uses; Terraform does not create it."
   type        = string
 }
 {% endif %}

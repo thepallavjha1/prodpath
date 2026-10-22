@@ -201,5 +201,30 @@ def test_traps_are_ranked_by_severity_then_impact() -> None:
 
 
 def test_the_registry_has_one_function_per_seeded_trap() -> None:
-    assert len(TRAPS) == 10
+    assert len(TRAPS) == 12
     assert find_traps.__name__ == "find_traps" and TrapContext.__name__ == "TrapContext"
+
+
+SITE = [f("framework", "vite"), f("framework", "react")]
+
+
+def test_cloudfront_certificate_trap_fires_for_any_static_site_only() -> None:
+    traps, _ = traps_for([svc("web", "static", SITE)])
+    assert traps["cloudfront-certificate-region"].severity == "medium"
+    assert "us-east-1" in traps["cloudfront-certificate-region"].why
+    other, _ = traps_for(DB_APP)
+    assert "cloudfront-certificate-region" not in other
+
+
+def test_spa_fallback_trap_only_fires_for_client_routed_sites() -> None:
+    spa, _ = traps_for([svc("web", "static", SITE)])
+    assert "spa-fallback-hides-404s" in spa
+    plain, _ = traps_for([svc("blog", "static", [f("framework", "gatsby")])])
+    assert "spa-fallback-hides-404s" not in plain
+
+
+def test_internet_egress_trap_counts_cloudfront_traffic_too() -> None:
+    """A static site alone: 26.28 GB x 0.10 = 2.628 of CloudFront data out, no web services."""
+    traps, _ = traps_for([svc("web", "static", SITE)])
+    assert traps["internet-egress"].est_monthly_usd_impact == pytest.approx(2.63, abs=0.005)
+    assert "no-autoscaling" not in traps and "interface-endpoint-fixed-cost" not in traps
