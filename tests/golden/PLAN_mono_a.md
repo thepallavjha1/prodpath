@@ -2,7 +2,7 @@
 
 # Production plan
 
-Target: **AWS**, region `ap-south-1`, environment `prod`. 1 services detected, 12 components planned.
+Target: **AWS**, region `ap-south-1`, environment `prod`. 1 services detected, 15 components planned.
 
 ## Services
 
@@ -26,6 +26,9 @@ Target: **AWS**, region `ap-south-1`, environment `prod`. 1 services detected, 1
 | `logs-root` | log-group | retention 30 days | CloudWatch logs with an explicit retention so they cannot grow forever. | `Dockerfile:5` |
 | `role-root` | iam-task-role | least-privilege task role | root gets its own role limited to the resources it uses. | `Dockerfile:5` |
 | `ecs-svc-root` | ecs-service-web | Fargate 0.5 vCPU / 1 GB, 2 tasks (default) | Stateless HTTP container behind the shared load balancer. | `Dockerfile:5` |
+| `autoscaling-root` | autoscaling | 2 to 10 tasks, target CPU 60% | Scales root with load instead of a fixed task count; the bounds are defaults and live in var.service_scaling. | `Dockerfile:5` |
+| `alerts` | sns-alerts | 1 topic, e-mail subscription | One place where every alarm is delivered. The topic is not KMS-encrypted because CloudWatch cannot publish to a topic that uses the AWS-managed key. | `Dockerfile:5` |
+| `alarms` | alarms | CloudWatch alarms on errors, saturation, storage and queue depth | Without alarms nobody is told when a service, database or queue starts failing. | `Dockerfile:5` |
 
 ## Steps
 
@@ -107,15 +110,18 @@ Terraform created a role that only your repository and branch can assume through
 
 **Verify:** A workflow run on the allowed branch assumes the role and deploys; other branches are denied.
 
-### 7. Add alarms (not generated yet)
+### 7. Confirm alert notifications and check autoscaling
 
-Log groups and their retention come from Terraform. Alarms are not generated in this version; without them nobody is told when something breaks.
+Terraform created the alarms, the alerts topic and the autoscaling policies. The e-mail subscription is the one manual part: AWS only starts delivering after the confirmation link in alert_email's inbox is clicked. Thresholds are defaults; tune them once you know normal behaviour.
 
 ```bash
-# Suggested minimum: ALB 5xx rate and unhealthy host count, ECS service CPU and memory, RDS CPU, free storage and connections, and an SNS topic or chat webhook
+# Open the e-mail AWS sent to the alert_email address in terraform.tfvars and click 'Confirm subscription'. Until you do, no alarm reaches anyone.
+aws sns list-subscriptions-by-topic --topic-arn <ALERTS_TOPIC_ARN>   # SubscriptionArn must not say PendingConfirmation
+aws cloudwatch set-alarm-state --alarm-name <ALARM_NAME> --state-value ALARM --state-reason "notification test"
+aws application-autoscaling describe-scaling-policies --service-namespace ecs   # one CPU policy per service; min/max come from var.service_scaling
 ```
 
-**Verify:** Trigger a test alarm and confirm you receive the notification.
+**Verify:** A test alarm e-mail arrives, and each scalable service shows a scaling policy.
 
 ### 8. Know how to roll back before you need to
 
@@ -142,7 +148,7 @@ curl -fsS https://<HOST_FOR_ECS_SVC_ROOT>/health
 
 ## Terraform
 
-16 files were written to `.prodpath/out/terraform/`: `README.md`, `alb.tf`, `backend.tf`, `ecr.tf`, `ecs.tf`, `github_oidc.tf`, `iam.tf`, `main.tf`, `network.tf`, `outputs.tf`, `rds.tf`, `s3.tf`, `secrets.tf`, `terraform.tfvars.example`, `variables.tf`, `versions.tf`.
+18 files were written to `.prodpath/out/terraform/`: `README.md`, `alarms.tf`, `alb.tf`, `autoscaling.tf`, `backend.tf`, `ecr.tf`, `ecs.tf`, `github_oidc.tf`, `iam.tf`, `main.tf`, `network.tf`, `outputs.tf`, `rds.tf`, `s3.tf`, `secrets.tf`, `terraform.tfvars.example`, `variables.tf`, `versions.tf`.
 
 **Checks run by this tool**
 
@@ -162,6 +168,7 @@ No specific risks were derived. See the unknowns below.
 
 ## Unknowns and open questions
 
+- Alarm thresholds are defaults, and alerts reach nobody until the e-mail subscription for var.alert_email is confirmed.
 - Domain name and ACM certificate are needed for HTTPS on the load balancer.
 - Traffic and data volume are unknown: all sizing is a default starting point.
 - root: writes local files; container disk is ephemeral. Move that state to S3 or a database before relying on it.

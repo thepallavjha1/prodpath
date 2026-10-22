@@ -466,19 +466,33 @@ def _cicd_terraform_step(arch: Architecture) -> Step | None:
 
 
 def _alarms_step(arch: Architecture) -> Step | None:
-    if not _of_type(arch, "log-group"):
+    alarms = _of_type(arch, "alarms")
+    if not alarms:
         return None
+    scaling = _of_type(arch, "autoscaling")
+    commands = [
+        "# Open the e-mail AWS sent to the alert_email address in terraform.tfvars and click "
+        "'Confirm subscription'. Until you do, no alarm reaches anyone.",
+        "aws sns list-subscriptions-by-topic --topic-arn <ALERTS_TOPIC_ARN>   "
+        "# SubscriptionArn must not say PendingConfirmation",
+        "aws cloudwatch set-alarm-state --alarm-name <ALARM_NAME> --state-value ALARM "
+        '--state-reason "notification test"',
+    ]
+    if scaling:
+        commands.append(
+            "aws application-autoscaling describe-scaling-policies --service-namespace ecs   "
+            "# one CPU policy per service; min/max come from var.service_scaling"
+        )
     return Step(
         id="observability",
-        title="Add alarms (not generated yet)",
-        why="Log groups and their retention come from Terraform. Alarms are not generated in this "
-        "version; without them nobody is told when something breaks.",
-        commands=[
-            "# Suggested minimum: ALB 5xx rate and unhealthy host count, ECS service CPU and "
-            "memory, RDS CPU, free storage and connections, and an SNS topic or chat webhook",
-        ],
-        verify="Trigger a test alarm and confirm you receive the notification.",
-        components=[],
+        title="Confirm alert notifications and check autoscaling",
+        why="Terraform created the alarms, the alerts topic and the autoscaling policies. The "
+        "e-mail subscription is the one manual part: AWS only starts delivering after the "
+        "confirmation link in alert_email's inbox is clicked. Thresholds are defaults; tune them "
+        "once you know normal behaviour.",
+        commands=commands,
+        verify="A test alarm e-mail arrives, and each scalable service shows a scaling policy.",
+        components=_names(alarms),
     )
 
 

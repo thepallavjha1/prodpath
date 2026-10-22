@@ -60,6 +60,27 @@ variable "service_environment" {
   default     = {}
 }
 
+variable "service_scaling" {
+  description = "Autoscaling bounds per service id: task count range and the CPU percentage to hold. Defaults are starting points; max_count is also your cost ceiling."
+  type = map(object({
+    min_count  = number
+    max_count  = number
+    cpu_target = number
+  }))
+  default = {
+    "root" = {
+      min_count  = 2
+      max_count  = 10
+      cpu_target = 60
+    }
+  }
+}
+
+variable "alert_email" {
+  description = "E-mail address for alarm notifications. AWS sends a confirmation link first; alarms reach nobody until it is clicked."
+  type        = string
+}
+
 variable "certificate_arn" {
   description = "ARN of the ACM certificate for the HTTPS listener (in the same region)."
   type        = string

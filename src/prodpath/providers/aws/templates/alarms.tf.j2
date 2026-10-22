@@ -1,0 +1,39 @@
+{% if alarms %}
+# One topic for every alarm. It is not KMS-encrypted on purpose: CloudWatch cannot publish to a
+# topic that uses the AWS-managed key, and the messages carry alarm names, not application data.
+# AWS e-mails a confirmation link to var.alert_email; nothing is delivered until it is clicked.
+resource "aws_sns_topic" "alerts" {
+  name = "${local.name}-alerts"
+}
+
+resource "aws_sns_topic_subscription" "alerts_email" {
+  topic_arn = aws_sns_topic.alerts.arn
+  protocol  = "email"
+  endpoint  = var.alert_email
+}
+
+{% for a in alarms %}
+resource "aws_cloudwatch_metric_alarm" "{{ a.tf }}" {
+  alarm_name          = "${local.name}-{{ a.name }}"
+  alarm_description   = "{{ a.description }}"
+  namespace           = "{{ a.namespace }}"
+  metric_name         = "{{ a.metric }}"
+  statistic           = "{{ a.statistic }}"
+  period              = {{ a.period }}
+  evaluation_periods  = {{ a.evaluations }}
+  threshold           = {{ a.threshold }}
+  comparison_operator = "{{ a.operator }}"
+  treat_missing_data  = "{{ a.treat_missing }}"
+
+  dimensions = {
+{% for name, expression in a.dimensions %}
+    {{ name }} = {{ expression }}
+{% endfor %}
+  }
+
+  alarm_actions = [aws_sns_topic.alerts.arn]
+  ok_actions    = [aws_sns_topic.alerts.arn]
+}
+
+{% endfor %}
+{% endif %}

@@ -22,6 +22,7 @@ TYPE_ORDER = [
     "dynamodb", "elasticache", "sqs", "sns", "amazon-mq", "msk", "s3", "s3-site", "cloudfront",
     "secrets", "log-group",
     "iam-task-role", "apprunner", "ecs-service-web", "ecs-service-worker", "scheduled-task",
+    "autoscaling", "sns-alerts", "alarms",
 ]  # fmt: skip
 
 
@@ -463,6 +464,61 @@ def rule_storage_and_secrets(ctx: Context) -> list[Component]:
     return components
 
 
+SCALING_MAX_FACTOR = 5  # max_count = 5x the starting count
+CPU_TARGET = "60"  # percent; target tracking adds tasks above it and removes them below it
+
+
+def rule_scaling(ctx: Context) -> list[Component]:
+    """Autoscaling for container services, plus the alerts topic and alarms that watch them."""
+    if _uses_app_runner(ctx) or not ctx.deployable:
+        return []
+    minimum = 2 if ctx.is_prod else 1
+    components = []
+    for service in ctx.deployable:
+        if service.kind not in {"web", "worker"}:
+            continue  # scheduled jobs run once and exit
+        components.append(
+            _component(
+                "autoscaling",
+                f"autoscaling-{service.id}",
+                f"{minimum} to {minimum * SCALING_MAX_FACTOR} tasks, target CPU {CPU_TARGET}%",
+                f"Scales {service.id} with load instead of a fixed task count; the bounds are "
+                "defaults and live in var.service_scaling.",
+                [(service, _anchor(service))],
+            )
+        )
+        components[-1].params = {
+            "min_count": str(minimum),
+            "max_count": str(minimum * SCALING_MAX_FACTOR),
+            "cpu_target": CPU_TARGET,
+        }
+    everyone = [(s, _anchor(s)) for s in ctx.deployable]
+    components.append(
+        _component(
+            "sns-alerts",
+            "alerts",
+            "1 topic, e-mail subscription",
+            "One place where every alarm is delivered. The topic is not KMS-encrypted because "
+            "CloudWatch cannot publish to a topic that uses the AWS-managed key.",
+            everyone,
+        )
+    )
+    components.append(
+        _component(
+            "alarms",
+            "alarms",
+            "CloudWatch alarms on errors, saturation, storage and queue depth",
+            "Without alarms nobody is told when a service, database or queue starts failing.",
+            everyone,
+        )
+    )
+    ctx.unknowns.append(
+        "Alarm thresholds are defaults, and alerts reach nobody until the e-mail subscription "
+        "for var.alert_email is confirmed."
+    )
+    return components
+
+
 def _fill_params(ctx: Context, components: list[Component]) -> None:
     """Machine-readable sizing for the Terraform templates; defaults, not measurements."""
     by_id = {s.id: s for s in ctx.deployable}
@@ -497,6 +553,7 @@ RULES: list[Rule] = [
     rule_datastores,
     rule_cache_and_queues,
     rule_storage_and_secrets,
+    rule_scaling,
 ]
 
 

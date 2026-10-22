@@ -17,5 +17,8 @@ Environment: `{{ environment }}`, region: `{{ region }}`.
 ## Notes
 
 - Services start only after their image tag exists in ECR; until then ECS keeps retrying.
-- ECS services ignore `task_definition` changes so CI deploys are not rolled back by Terraform.
+- ECS services ignore `task_definition` and `desired_count` changes: CI owns deployments and autoscaling owns the task count (bounds in `var.service_scaling`; `max_count` is your cost ceiling).
+{% if alarms %}
+- Alarms notify `var.alert_email` only after you click the confirmation link AWS e-mails to it.
+{% endif %}
 - Nothing here contains secrets, account ids or access keys.

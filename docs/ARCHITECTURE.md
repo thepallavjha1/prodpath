@@ -343,6 +343,7 @@ class Provider(Protocol):
 
 Default component rules (tunable; rules are code, so they stay reviewable):
 
+- Web and worker services also get an `autoscaling` component (CPU target tracking, min = current count, max = 5x) and the system gets one `sns-alerts` topic plus `alarms` (ADR-018). Alarm definitions are data (`build_alarms` in `iac.py`) shared by the Terraform template and the cost model.
 - Static site -> private S3 bucket + CloudFront distribution (origin access control, HTTPS only, SPA fallback for client-routed frameworks) at `<service-id>.<domain_name>`; the CloudFront certificate is a variable (must live in us-east-1). Static sites need no ECR, ECS or log group.
 - Stateless HTTP container -> ECS Fargate behind **one shared ALB** with host/path routing (avoids one load balancer per service in a monorepo). Small single-service apps may get App Runner instead.
 - Background worker -> ECS Fargate service with no load balancer.
@@ -364,6 +365,8 @@ Implemented in Phase 6 (ADR-016). Contracts added to `models.py`: `Forecast` (li
 4. **Ranges.** Three deterministic scenarios (low, expected, spike) scale traffic-driven quantities (requests, log ingest, data transfer, LCU-hours, queue and object operations); always-on resources (tasks, load balancer hours, databases, caches, endpoints) are constant because nothing here autoscales. Month = 730 hours (the AWS convention). Monte Carlo is a later phase.
 5. **Traps.** `providers/aws/traps.py` is a registry: each trap is one function from a context (architecture, system, forecast) to an optional `Trap` with severity, where, why, fix and an estimated monthly impact computed from the forecast when possible. Seed set: no outbound path (NAT) for services that call out or each other, interface VPC endpoint fixed cost, CloudWatch log ingestion, public IPv4 addresses, data transfer out, no autoscaling under spike, ElastiCache replica cost, Multi-AZ RDS in non-prod, Container Insights metrics, cross-AZ traffic. Each has a test where it fires and one where it must not. Traps are ranked by severity, then estimated monthly impact (an unpriced high-severity trap still comes first).
 6. **Calibration** (Phase 7). `prodpath calibrate costs.csv` compares prediction with a manually exported actual-cost CSV and records the error per dimension. This dataset is the long-term moat.
+
+Autoscaling (Phase 8): web services scale on CPU between `min_count` and `max_count`; the forecast computes tasks per scenario as `clamp(ceil((rps + inbound rps) / rps_per_task), min, max)` using the `rps_per_task` assumption (default 25, overridable per service). Workers stay at their minimum count. Alarms are priced at the standard-resolution alarm rate.
 
 Not included in any forecast (stated in FORECAST.md): NAT gateway, KMS, Route 53, ACM, WAF, cross-AZ and inter-service transfer, image-pull traffic through endpoints, RDS backup storage beyond the free allowance, CloudWatch metrics and alarms, Container Insights metrics, taxes and support plans.
 

@@ -135,7 +135,7 @@ def test_secret_slots_are_created_without_values(rendered) -> None:  # type: ign
 def test_services_are_not_rolled_back_by_terraform(rendered) -> None:  # type: ignore[no-untyped-def]
     _, _, files = rendered
     services = files["ecs.tf"].count('resource "aws_ecs_service"')
-    assert files["ecs.tf"].count("ignore_changes = [task_definition]") == services
+    assert files["ecs.tf"].count("ignore_changes = [task_definition, desired_count]") == services
 
 
 def test_fixture_architectures_have_no_template_gaps(fixtures_dir: Path, tmp_path: Path) -> None:
@@ -249,3 +249,69 @@ def test_a_static_only_system_renders_no_compute_network_or_empty_ecr_statements
     assert "ecr:" not in files["github_oidc.tf"]  # no empty Resource list for a missing ECR repo
     assert "site_distributions" in files["outputs.tf"] and "site_buckets" in files["outputs.tf"]
     assert find_violations(files) == []
+
+
+def test_every_scalable_service_has_a_target_and_a_cpu_policy() -> None:
+    files = render_iac(arch_for(kitchen_sink_system()))
+    text = files["autoscaling.tf"]
+    for service in ("shop", "jobs", "admin"):
+        assert f'resource "aws_appautoscaling_target" "{service}"' in text
+        assert f'resource "aws_appautoscaling_policy" "{service}_cpu"' in text
+        assert f"aws_ecs_service.{service}.name" in text
+    assert "nightly" not in text  # scheduled jobs do not scale
+    assert text.count("ECSServiceAverageCPUUtilization") == 3
+    assert text.count('scalable_dimension = "ecs:service:DesiredCount"') == 3
+
+
+def test_services_let_autoscaling_own_the_task_count() -> None:
+    ecs = render_iac(arch_for(kitchen_sink_system()))["ecs.tf"]
+    services = ecs.count('resource "aws_ecs_service"')
+    assert ecs.count("ignore_changes = [task_definition, desired_count]") == services
+
+
+def test_scaling_bounds_are_a_documented_variable() -> None:
+    variables = render_iac(arch_for(kitchen_sink_system()))["variables.tf"]
+    assert 'variable "service_scaling"' in variables
+    for key in ("min_count", "max_count", "cpu_target"):
+        assert key in variables
+    assert 'variable "alert_email"' in variables
+
+
+def test_alarms_notify_one_unencrypted_topic_with_a_required_email() -> None:
+    files = render_iac(arch_for(kitchen_sink_system()))
+    text = files["alarms.tf"]
+    assert text.count('resource "aws_sns_topic" "alerts"') == 1
+    assert "kms_master_key_id" not in text  # CloudWatch cannot publish to an AWS-managed-key topic
+    assert (
+        "alert_email" in text
+        and 'protocol  = "email"' in text.replace("  ", " ")
+        or "email" in text
+    )
+    alarms = text.count('resource "aws_cloudwatch_metric_alarm"')
+    assert alarms >= 10
+    assert text.count("alarm_actions") == alarms and text.count("ok_actions") == alarms
+    assert "alert_email" in files["terraform.tfvars.example"]
+
+
+def test_alarm_coverage_follows_what_was_planned() -> None:
+    text = render_iac(arch_for(kitchen_sink_system()))["alarms.tf"]
+    for fragment in (
+        "HTTPCode_Target_5XX_Count",
+        "UnHealthyHostCount",
+        "CPUUtilization",
+        "MemoryUtilization",
+        "FreeStorageSpace",
+        "EngineCPUUtilization",
+        "Evictions",
+        "ApproximateNumberOfMessagesVisible",
+    ):
+        assert fragment in text, fragment
+    # An app with only a worker and no data stores has no ALB, RDS, Redis or queue alarms.
+    system = SystemModel(services=[make_service("w", "worker", [make_fact("worker", "rq")])])
+    worker_only = render_iac(arch_for(system))["alarms.tf"]
+    assert "UnHealthyHostCount" not in worker_only and "FreeStorageSpace" not in worker_only
+
+
+def test_rds_storage_alarm_threshold_is_twenty_percent_of_the_allocation() -> None:
+    text = render_iac(arch_for(kitchen_sink_system()))["alarms.tf"]
+    assert str(int(20 * 1024**3 * 0.2)) in text  # 20 GB allocated

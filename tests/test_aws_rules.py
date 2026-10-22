@@ -179,3 +179,46 @@ def test_static_components_have_reasons_and_evidence() -> None:
 def test_static_services_without_facts_are_not_planned() -> None:
     arch = choose([svc("empty", "static", [])])
     assert arch.components == []
+
+
+def test_web_and_worker_services_get_autoscaling_with_bounds_from_their_count() -> None:
+    arch = choose(
+        [
+            svc("api", "web", [*WEB, f("datastore", "postgres")]),
+            svc("jobs", "worker", [f("worker", "celery"), f("datastore", "postgres")]),
+            svc("nightly", "cron", [f("runtime", "python")]),
+        ]
+    )
+    scaling = {c.name: c for c in arch.components if c.type == "autoscaling"}
+    assert set(scaling) == {"autoscaling-api", "autoscaling-jobs"}  # cron jobs do not scale
+    assert scaling["autoscaling-api"].params == {
+        "min_count": "2",
+        "max_count": "10",
+        "cpu_target": "60",
+    }
+    assert scaling["autoscaling-api"].serves == ["api"]
+    assert scaling["autoscaling-api"].evidence and scaling["autoscaling-api"].reason
+
+
+def test_nonprod_scales_from_one_task() -> None:
+    arch = choose([svc("api", "web", [*WEB, f("datastore", "postgres")])], env="nonprod")
+    params = by_name(arch, "autoscaling-api").params
+    assert (params["min_count"], params["max_count"]) == ("1", "5")
+
+
+def test_alerts_topic_and_alarms_exist_whenever_something_is_deployed() -> None:
+    arch = choose([svc("api", "web", [*WEB, f("datastore", "postgres")])])
+    assert {"sns-alerts", "alarms"} <= types(arch)
+    assert by_name(arch, "alerts").serves == ["api"]
+    assert any("alert_email" in u or "confirm" in u for u in arch.unknowns)
+
+
+def test_no_autoscaling_without_container_services() -> None:
+    arch = choose([svc("site", "static", [f("framework", "vite")])])
+    assert not types(arch) & {"autoscaling", "alarms", "sns-alerts"}
+
+
+def test_a_lone_app_runner_service_has_no_ecs_autoscaling_or_alarms() -> None:
+    arch = choose([svc("site", "web", WEB)])
+    assert "apprunner" in types(arch)
+    assert not types(arch) & {"autoscaling", "alarms", "sns-alerts"}

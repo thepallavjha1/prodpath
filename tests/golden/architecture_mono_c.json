@@ -702,9 +702,186 @@
         "memory": "512",
         "desired_count": "1"
       }
+    },
+    {
+      "type": "autoscaling",
+      "name": "autoscaling-apps-billing",
+      "sizing": "2 to 10 tasks, target CPU 60%",
+      "reason": "Scales apps-billing with load instead of a fixed task count; the bounds are defaults and live in var.service_scaling.",
+      "serves": [
+        "apps-billing"
+      ],
+      "evidence": [
+        {
+          "path": "apps/billing/Dockerfile",
+          "line": 3,
+          "snippet": "EXPOSE 8000"
+        }
+      ],
+      "items": [],
+      "params": {
+        "min_count": "2",
+        "max_count": "10",
+        "cpu_target": "60"
+      }
+    },
+    {
+      "type": "autoscaling",
+      "name": "autoscaling-apps-gateway",
+      "sizing": "2 to 10 tasks, target CPU 60%",
+      "reason": "Scales apps-gateway with load instead of a fixed task count; the bounds are defaults and live in var.service_scaling.",
+      "serves": [
+        "apps-gateway"
+      ],
+      "evidence": [
+        {
+          "path": "apps/gateway/Dockerfile",
+          "line": 3,
+          "snippet": "EXPOSE 3000"
+        }
+      ],
+      "items": [],
+      "params": {
+        "min_count": "2",
+        "max_count": "10",
+        "cpu_target": "60"
+      }
+    },
+    {
+      "type": "autoscaling",
+      "name": "autoscaling-apps-notifier",
+      "sizing": "2 to 10 tasks, target CPU 60%",
+      "reason": "Scales apps-notifier with load instead of a fixed task count; the bounds are defaults and live in var.service_scaling.",
+      "serves": [
+        "apps-notifier"
+      ],
+      "evidence": [
+        {
+          "path": "apps/notifier/Dockerfile",
+          "line": 3,
+          "snippet": "EXPOSE 3000"
+        }
+      ],
+      "items": [],
+      "params": {
+        "min_count": "2",
+        "max_count": "10",
+        "cpu_target": "60"
+      }
+    },
+    {
+      "type": "autoscaling",
+      "name": "autoscaling-apps-users",
+      "sizing": "2 to 10 tasks, target CPU 60%",
+      "reason": "Scales apps-users with load instead of a fixed task count; the bounds are defaults and live in var.service_scaling.",
+      "serves": [
+        "apps-users"
+      ],
+      "evidence": [
+        {
+          "path": "apps/users/Dockerfile",
+          "line": 3,
+          "snippet": "EXPOSE 8000"
+        }
+      ],
+      "items": [],
+      "params": {
+        "min_count": "2",
+        "max_count": "10",
+        "cpu_target": "60"
+      }
+    },
+    {
+      "type": "autoscaling",
+      "name": "autoscaling-apps-web",
+      "sizing": "2 to 10 tasks, target CPU 60%",
+      "reason": "Scales apps-web with load instead of a fixed task count; the bounds are defaults and live in var.service_scaling.",
+      "serves": [
+        "apps-web"
+      ],
+      "evidence": [
+        {
+          "path": "apps/web/Dockerfile",
+          "line": 3,
+          "snippet": "EXPOSE 3000"
+        }
+      ],
+      "items": [],
+      "params": {
+        "min_count": "2",
+        "max_count": "10",
+        "cpu_target": "60"
+      }
+    },
+    {
+      "type": "sns-alerts",
+      "name": "alerts",
+      "sizing": "1 topic, e-mail subscription",
+      "reason": "One place where every alarm is delivered. The topic is not KMS-encrypted because CloudWatch cannot publish to a topic that uses the AWS-managed key.",
+      "serves": [
+        "apps-billing",
+        "apps-gateway",
+        "apps-notifier",
+        "apps-reports",
+        "apps-users",
+        "apps-web"
+      ],
+      "evidence": [
+        {
+          "path": "apps/billing/Dockerfile",
+          "line": 3,
+          "snippet": "EXPOSE 8000"
+        },
+        {
+          "path": "apps/gateway/Dockerfile",
+          "line": 3,
+          "snippet": "EXPOSE 3000"
+        },
+        {
+          "path": "apps/notifier/Dockerfile",
+          "line": 3,
+          "snippet": "EXPOSE 3000"
+        }
+      ],
+      "items": [],
+      "params": {}
+    },
+    {
+      "type": "alarms",
+      "name": "alarms",
+      "sizing": "CloudWatch alarms on errors, saturation, storage and queue depth",
+      "reason": "Without alarms nobody is told when a service, database or queue starts failing.",
+      "serves": [
+        "apps-billing",
+        "apps-gateway",
+        "apps-notifier",
+        "apps-reports",
+        "apps-users",
+        "apps-web"
+      ],
+      "evidence": [
+        {
+          "path": "apps/billing/Dockerfile",
+          "line": 3,
+          "snippet": "EXPOSE 8000"
+        },
+        {
+          "path": "apps/gateway/Dockerfile",
+          "line": 3,
+          "snippet": "EXPOSE 3000"
+        },
+        {
+          "path": "apps/notifier/Dockerfile",
+          "line": 3,
+          "snippet": "EXPOSE 3000"
+        }
+      ],
+      "items": [],
+      "params": {}
     }
   ],
   "unknowns": [
+    "Alarm thresholds are defaults, and alerts reach nobody until the e-mail subscription for var.alert_email is confirmed.",
     "Domain name and ACM certificate are needed for HTTPS on the load balancer.",
     "Redis: in-transit encryption is on, so clients must connect with TLS (rediss://); check each service's Redis client settings.",
     "Traffic and data volume are unknown: all sizing is a default starting point.",

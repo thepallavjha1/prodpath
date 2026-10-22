@@ -17,7 +17,8 @@ TEMPLATE_DIR = Path(__file__).parent / "templates"
 COMPUTE_TYPES = {"ecs-service-web", "ecs-service-worker", "scheduled-task"}
 GENERATED_TYPES = {
     "tf-state", "iam-github-oidc", "vpc", "ecs-cluster", "alb", "ecr", "rds", "sqs", "sns", "s3",
-    "secrets", "log-group", "iam-task-role", "s3-site", "cloudfront", *COMPUTE_TYPES,
+    "secrets", "log-group", "iam-task-role", "s3-site", "cloudfront", "autoscaling",
+    "sns-alerts", "alarms", *COMPUTE_TYPES,
 }  # fmt: skip
 DB_PORTS = {"postgres": 5432, "mysql": 3306}
 DEFAULT_WEB_PORT = 8080
@@ -26,8 +27,8 @@ AZ_COUNT = 2  # subnets and endpoint ENIs per AZ; the network template creates t
 TEMPLATES = [
     "versions.tf", "backend.tf", "main.tf", "variables.tf", "network.tf", "ecr.tf", "iam.tf",
     "secrets.tf", "ecs.tf", "alb.tf", "rds.tf", "elasticache.tf", "messaging.tf", "s3.tf",
-    "scheduler.tf", "static_site.tf", "github_oidc.tf", "outputs.tf", "terraform.tfvars.example",
-    "README.md",
+    "scheduler.tf", "autoscaling.tf", "alarms.tf", "static_site.tf", "github_oidc.tf", "outputs.tf",
+    "terraform.tfvars.example", "README.md",
 ]  # fmt: skip
 
 # Autoescape is off on purpose: the output is HCL, not HTML.
@@ -101,6 +102,142 @@ def _service_context(arch: Architecture, c: Component) -> dict[str, Any]:
     }
 
 
+Alarm = dict[str, Any]
+ALARM_STORAGE_FRACTION = 0.2  # alert when a database has under 20% free storage
+
+
+def _alarm(
+    tf: str,
+    name: str,
+    description: str,
+    namespace: str,
+    metric: str,
+    threshold: float,
+    dimensions: list[tuple[str, str]],
+    operator: str = "GreaterThanThreshold",
+    statistic: str = "Average",
+    period: int = 300,
+    evaluations: int = 3,
+) -> Alarm:
+    return {
+        "tf": tf,
+        "name": name,
+        "description": description,
+        "namespace": namespace,
+        "metric": metric,
+        "threshold": threshold,
+        "dimensions": dimensions,
+        "operator": operator,
+        "statistic": statistic,
+        "period": period,
+        "evaluations": evaluations,
+        "treat_missing": "notBreaching",
+    }
+
+
+def _service_alarms(arch: Architecture) -> list[Alarm]:
+    has_alb = any(c.type == "alb" for c in arch.components)
+    alarms: list[Alarm] = []
+    services = [c for c in arch.components if c.type in {"ecs-service-web", "ecs-service-worker"}]
+    for c in sorted(services, key=lambda x: x.name):
+        sid, tf = c.serves[0], tf_id(c.serves[0])
+        cluster = [
+            ("ClusterName", "aws_ecs_cluster.main.name"),
+            ("ServiceName", f"aws_ecs_service.{tf}.name"),
+        ]
+        alarms.append(
+            _alarm(
+                f"{tf}_cpu_high", f"{sid}-cpu-high",
+                f"{sid} CPU stays above 85%: scaling is capped or too slow",
+                "AWS/ECS", "CPUUtilization", 85, cluster,
+            )
+        )  # fmt: skip
+        alarms.append(
+            _alarm(
+                f"{tf}_memory_high", f"{sid}-memory-high",
+                f"{sid} memory stays above 85%: tasks risk being killed",
+                "AWS/ECS", "MemoryUtilization", 85, cluster,
+            )
+        )  # fmt: skip
+        if c.type == "ecs-service-web" and has_alb:
+            target = [
+                ("LoadBalancer", "aws_lb.main.arn_suffix"),
+                ("TargetGroup", f"aws_lb_target_group.{tf}.arn_suffix"),
+            ]
+            alarms.append(
+                _alarm(
+                    f"{tf}_5xx", f"{sid}-5xx", f"{sid} returns server errors",
+                    "AWS/ApplicationELB", "HTTPCode_Target_5XX_Count", 10, target,
+                    statistic="Sum", period=60, evaluations=5,
+                )
+            )  # fmt: skip
+            alarms.append(
+                _alarm(
+                    f"{tf}_unhealthy", f"{sid}-unhealthy-hosts",
+                    f"{sid} has targets failing the load balancer health check",
+                    "AWS/ApplicationELB", "UnHealthyHostCount", 0, target,
+                    statistic="Maximum", period=60,
+                )
+            )  # fmt: skip
+    return alarms
+
+
+def _data_alarms(arch: Architecture) -> list[Alarm]:
+    alarms: list[Alarm] = []
+    for c in sorted((c for c in arch.components if c.type == "rds"), key=lambda x: x.name):
+        engine = c.params["engine"]
+        database = [("DBInstanceIdentifier", f"aws_db_instance.{tf_id(engine)}.identifier")]
+        free_bytes = int(float(c.params["allocated_storage"]) * 1024**3 * ALARM_STORAGE_FRACTION)
+        alarms.append(
+            _alarm(
+                f"rds_{tf_id(engine)}_cpu", f"{engine}-cpu-high",
+                f"{engine} database CPU stays above 80%", "AWS/RDS", "CPUUtilization", 80, database,
+            )
+        )  # fmt: skip
+        alarms.append(
+            _alarm(
+                f"rds_{tf_id(engine)}_storage", f"{engine}-low-storage",
+                f"{engine} database has under 20% free storage",
+                "AWS/RDS", "FreeStorageSpace", free_bytes, database,
+                operator="LessThanThreshold", statistic="Minimum",
+            )
+        )  # fmt: skip
+    if any(c.name == "elasticache-redis" for c in arch.components):
+        node = [
+            (
+                "CacheClusterId",
+                '"${aws_elasticache_replication_group.redis.replication_group_id}-001"',
+            )
+        ]
+        alarms.append(
+            _alarm(
+                "redis_cpu", "redis-cpu-high", "Redis engine CPU stays above 80%",
+                "AWS/ElastiCache", "EngineCPUUtilization", 80, node,
+            )
+        )  # fmt: skip
+        alarms.append(
+            _alarm(
+                "redis_evictions", "redis-evictions", "Redis is evicting keys: memory is full",
+                "AWS/ElastiCache", "Evictions", 0, node, statistic="Sum", evaluations=1,
+            )
+        )  # fmt: skip
+    if any(c.type == "sqs" for c in arch.components):
+        alarms.append(
+            _alarm(
+                "dlq_not_empty", "dead-letter-queue-not-empty",
+                "Messages are failing repeatedly and landing in the dead-letter queue",
+                "AWS/SQS", "ApproximateNumberOfMessagesVisible", 0,
+                [("QueueName", "aws_sqs_queue.dlq.name")], statistic="Maximum", evaluations=1,
+            )
+        )  # fmt: skip
+    return alarms
+
+
+def build_alarms(arch: Architecture) -> list[Alarm]:
+    """Every alarm the generated stack defines. One list feeds the template and the cost model."""
+    return [*_service_alarms(arch), *_data_alarms(arch)]
+
+
 def build_context(arch: Architecture) -> dict[str, Any]:
     compute = [c for c in arch.components if c.type in COMPUTE_TYPES]
     services = sorted((_service_context(arch, c) for c in compute), key=lambda s: s["id"])
@@ -140,6 +277,17 @@ def build_context(arch: Architecture) -> dict[str, Any]:
         for c in arch.components
         if c.type == "s3"
     ]
+    scaling = [
+        {
+            "id": c.serves[0],
+            "tf": tf_id(c.serves[0]),
+            "min": int(c.params["min_count"]),
+            "max": int(c.params["max_count"]),
+            "cpu_target": int(c.params["cpu_target"]),
+        }
+        for c in arch.components
+        if c.type == "autoscaling"
+    ]
     static_sites = [
         {
             "id": c.serves[0],
@@ -171,6 +319,8 @@ def build_context(arch: Architecture) -> dict[str, Any]:
         "sns": messaging["sns"],
         "buckets": buckets,
         "static_sites": sorted(static_sites, key=lambda site: site["id"]),
+        "scaling": sorted(scaling, key=lambda item: item["id"]),
+        "alarms": build_alarms(arch),
     }
 
 

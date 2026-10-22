@@ -1,23 +1,23 @@
-<!-- prodpath 0.0.1 | generated 2000-01-01T00:00:00Z | input 0554d011ee97 -->
+<!-- prodpath 0.0.1 | generated 2000-01-01T00:00:00Z | input a791e43f6417 -->
 
 # What will this cost me, and what can bite me?
 
 Target: **AWS**, region `ap-south-1`, environment `prod`.
 
-**Expected: about $259.80 per month**, ranging from $238.75 (low) to $372.09 (spike).
+**Expected: about $260.80 per month**, ranging from $239.75 (low) to $373.09 (spike).
 
 | Scenario | Traffic vs expected | USD per month |
 |---|---|---|
-| Low | 0.25x | $238.75 |
-| Expected | 1x | $259.80 |
-| Spike | 5x | $372.09 |
+| Low | 0.25x | $239.75 |
+| Expected | 1x | $260.80 |
+| Spike | 5x | $373.09 |
 
-10 of 11 assumptions are defaults, not measurements: supply a `usage.toml` to replace them with your real numbers.
+11 of 12 assumptions are defaults, not measurements: supply a `usage.toml` to replace them with your real numbers.
 
 ## Biggest cost drivers
 
 1. `rds-postgres`: $77.00 (30%)
-2. `vpc-endpoints`: $58.51 (23%)
+2. `vpc-endpoints`: $58.51 (22%)
 3. `ecs-svc-apps-api`: $36.50 (14%)
 4. `ecs-svc-apps-dashboard`: $36.50 (14%)
 5. `alb`: $22.48 (9%)
@@ -35,6 +35,7 @@ Every number below depends on these. **Source** says where each came from: `user
 | `hours_per_month` | 730 | h | **default** | AWS billing convention for a month. |
 | `log_kb_per_request` | 2 | KB | **default** | Log volume per request (not extracted from code yet). |
 | `response_kb` | 10 | KB | **default** | Average response size sent to the internet. |
+| `rps_per_task` | 25 | req/s | **default** | Requests per second one task handles at the CPU target. |
 | `scenario_low` | 0.25 | x | **default** | Traffic multiplier for the low scenario. |
 | `scenario_spike` | 5 | x | **default** | Traffic multiplier for the spike scenario. |
 | `site_stored_gb` | 0.5 | GB | **default** | Built files stored per static site. |
@@ -77,13 +78,23 @@ Quantities are monthly (730 hours). Always-on resources do not change between sc
 | `cloudfront-apps-spa` | data transfer out | 26.28 | GB | $0.1 | `TEST/cloudfront.out_gb.in/cloudfront.out_gb.in` | $0.66 | $2.63 | $13.14 |
 | `s3-site-apps-spa` | storage | 0.50 | GB-month | $0.02 | `TEST/s3.storage_gb_month/s3.storage_gb_month` | $0.01 | $0.01 | $0.01 |
 | `s3-site-apps-spa` | GET requests (cache misses) | 262,800.00 | requests | $1e-06 | `TEST/s3.get_request/s3.get_request` | $0.07 | $0.26 | $1.31 |
-| **Total** |  |  |  |  |  | $238.75 | $259.80 | $372.09 |
+| `alarms` | 10 standard alarms | 10.00 | alarm-month | $0.1 | `TEST/cloudwatch.alarm_month/cloudwatch.alarm_month` | $1.00 | $1.00 | $1.00 |
+| **Total** |  |  |  |  |  | $239.75 | $260.80 | $373.09 |
 
 ## What can bite me
 
 Ranked by severity, then estimated monthly impact.
 
-### 1. interface-endpoint-fixed-cost (medium)
+### 1. autoscaling-max-cost (high)
+
+**Where:** autoscaling.tf (var.service_scaling max_count)  
+**Impact:** about $292.00/month
+
+**Why it bites:** Services scale out on CPU (apps-api up to 10 tasks; apps-dashboard up to 10 tasks). Held at those maximums all month they would cost about $292.00 more than the expected forecast. A traffic spike, a retry storm or a slow dependency can push a service there.
+
+**Fix:** Set max_count to what you are willing to pay for, alarm on running task count, and load-test one task to replace the default rps_per_task assumption with a real number.
+
+### 2. interface-endpoint-fixed-cost (medium)
 
 **Where:** network.tf (aws_vpc_endpoint.interface)  
 **Impact:** about $58.40/month
@@ -92,7 +103,7 @@ Ranked by severity, then estimated monthly impact.
 
 **Fix:** Keep only the endpoints you need, run one AZ in non-production, or compare against a NAT gateway for your traffic before deciding.
 
-### 2. internet-egress (medium)
+### 3. internet-egress (medium)
 
 **Where:** alb.tf / static_site.tf (every service that serves users)  
 **Impact:** about $13.14/month
@@ -101,7 +112,16 @@ Ranked by severity, then estimated monthly impact.
 
 **Fix:** Compress responses, cache at a CDN, and avoid returning large payloads by default.
 
-### 3. cloudfront-certificate-region (medium)
+### 4. alarm-subscription-unconfirmed (medium)
+
+**Where:** alarms.tf (aws_sns_topic_subscription.alerts_email)  
+**Impact:** not priced
+
+**Why it bites:** AWS sends a confirmation e-mail to alert_email when the subscription is created. Until someone clicks the link, every alarm fires into a topic with no listeners and nobody is told that something is wrong.
+
+**Fix:** Apply, open the confirmation e-mail immediately, and test with `aws cloudwatch set-alarm-state` on one alarm. Consider a shared mailbox so alerts do not depend on one person.
+
+### 5. cloudfront-certificate-region (medium)
 
 **Where:** variables.tf (site_certificate_arn), static_site.tf  
 **Impact:** not priced
@@ -110,16 +130,7 @@ Ranked by severity, then estimated monthly impact.
 
 **Fix:** Request one certificate in us-east-1 covering <service-id>.<domain_name> for each site (or a wildcard), validate it by DNS, and pass its ARN as site_certificate_arn.
 
-### 4. no-autoscaling (medium)
-
-**Where:** ecs.tf (aws_ecs_service desired_count)  
-**Impact:** not priced
-
-**Why it bites:** Task counts are fixed (apps-api=2, apps-dashboard=2) and nothing scales them. A traffic spike can saturate the tasks, and quiet periods still pay for full capacity.
-
-**Fix:** Add aws_appautoscaling_target and a target-tracking policy on CPU or request count per service, with sensible minimum and maximum counts.
-
-### 5. public-ipv4 (low)
+### 6. public-ipv4 (low)
 
 **Where:** alb.tf (aws_lb.main)  
 **Impact:** about $7.30/month
@@ -128,7 +139,7 @@ Ranked by severity, then estimated monthly impact.
 
 **Fix:** Accept it for the one shared load balancer; never add a load balancer per service.
 
-### 6. log-ingestion (low)
+### 7. log-ingestion (low)
 
 **Where:** ecs.tf (aws_cloudwatch_log_group)  
 **Impact:** about $5.26/month
@@ -137,7 +148,7 @@ Ranked by severity, then estimated monthly impact.
 
 **Fix:** Log at INFO or above in production, do not log request bodies, sample noisy lines, and keep retention short (set to 30 days here).
 
-### 7. container-insights (low)
+### 8. container-insights (low)
 
 **Where:** ecs.tf (aws_ecs_cluster.main, containerInsights = enabled)  
 **Impact:** not priced
@@ -146,7 +157,7 @@ Ranked by severity, then estimated monthly impact.
 
 **Fix:** Set the setting to disabled until you need the dashboards, or budget for it.
 
-### 8. cross-az-traffic (low)
+### 9. cross-az-traffic (low)
 
 **Where:** ecs.tf / rds.tf / elasticache.tf  
 **Impact:** not priced
@@ -155,7 +166,7 @@ Ranked by severity, then estimated monthly impact.
 
 **Fix:** Keep chatty paths within one AZ where you can; watch inter-AZ bytes in Cost Explorer.
 
-### 9. spa-fallback-hides-404s (low)
+### 10. spa-fallback-hides-404s (low)
 
 **Where:** static_site.tf (custom_error_response)  
 **Impact:** not priced

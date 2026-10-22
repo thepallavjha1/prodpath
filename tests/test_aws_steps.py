@@ -131,3 +131,20 @@ def test_verify_step_checks_each_site() -> None:
 def test_frontend_commands_use_the_detected_build_directory() -> None:
     _, steps = plan_steps([svc("blog", "static", [f("framework", "gatsby")])])
     assert "aws s3 sync public/ s3://" in "\n".join(step(steps, "frontend").commands)
+
+
+def test_alerts_step_confirms_the_email_and_tests_an_alarm_and_checks_scaling() -> None:
+    _, steps = plan_steps(FULL)
+    alerts = step(steps, "observability")
+    assert "alert" in alerts.title.lower()
+    text = "\n".join(alerts.commands)
+    assert "Confirm subscription" in text
+    assert "aws sns list-subscriptions-by-topic" in text
+    assert "aws cloudwatch set-alarm-state" in text
+    assert "aws application-autoscaling describe-scaling-policies --service-namespace ecs" in text
+    assert "terraform.tfvars" in alerts.why or "alert_email" in alerts.why
+
+
+def test_static_only_systems_have_no_alerts_step() -> None:
+    _, steps = plan_steps([svc("web", "static", SITE)])
+    assert "observability" not in [s.id for s in steps]

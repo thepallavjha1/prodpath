@@ -106,9 +106,10 @@ resource "aws_ecs_service" "apps_billing" {
 
   depends_on = [aws_lb_listener.https]
 
-  # CI deploys new task definition revisions; Terraform must not roll them back.
+  # CI deploys new task definition revisions and autoscaling owns the task count: Terraform
+  # must not roll either back.
   lifecycle {
-    ignore_changes = [task_definition]
+    ignore_changes = [task_definition, desired_count]
   }
 }
 
@@ -217,9 +218,10 @@ resource "aws_ecs_service" "apps_gateway" {
 
   depends_on = [aws_lb_listener.https]
 
-  # CI deploys new task definition revisions; Terraform must not roll them back.
+  # CI deploys new task definition revisions and autoscaling owns the task count: Terraform
+  # must not roll either back.
   lifecycle {
-    ignore_changes = [task_definition]
+    ignore_changes = [task_definition, desired_count]
   }
 }
 
@@ -320,9 +322,10 @@ resource "aws_ecs_service" "apps_notifier" {
 
   depends_on = [aws_lb_listener.https]
 
-  # CI deploys new task definition revisions; Terraform must not roll them back.
+  # CI deploys new task definition revisions and autoscaling owns the task count: Terraform
+  # must not roll either back.
   lifecycle {
-    ignore_changes = [task_definition]
+    ignore_changes = [task_definition, desired_count]
   }
 }
 
@@ -476,9 +479,10 @@ resource "aws_ecs_service" "apps_users" {
 
   depends_on = [aws_lb_listener.https]
 
-  # CI deploys new task definition revisions; Terraform must not roll them back.
+  # CI deploys new task definition revisions and autoscaling owns the task count: Terraform
+  # must not roll either back.
   lifecycle {
-    ignore_changes = [task_definition]
+    ignore_changes = [task_definition, desired_count]
   }
 }
 
@@ -579,8 +583,9 @@ resource "aws_ecs_service" "apps_web" {
 
   depends_on = [aws_lb_listener.https]
 
-  # CI deploys new task definition revisions; Terraform must not roll them back.
+  # CI deploys new task definition revisions and autoscaling owns the task count: Terraform
+  # must not roll either back.
   lifecycle {
-    ignore_changes = [task_definition]
+    ignore_changes = [task_definition, desired_count]
   }
 }

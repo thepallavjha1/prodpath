@@ -32,6 +32,12 @@
       "unit": "Requests",
       "usd": 1e-06
     },
+    "cloudwatch.alarm_month": {
+      "description": "TEST ONLY: made-up round number, not an AWS price",
+      "ref": "TEST/cloudwatch.alarm_month/cloudwatch.alarm_month",
+      "unit": "Alarms",
+      "usd": 0.1
+    },
     "cloudwatch.logs_ingest_gb": {
       "description": "TEST ONLY: made-up round number, not an AWS price",
       "ref": "TEST/cloudwatch.logs_ingest_gb/cloudwatch.logs_ingest_gb",

@@ -15,11 +15,11 @@ Keep it short, factual and current. History goes in the changelog; design lives 
 
 ## Current state
 
-- Phase: **7 (frontend hosting) implemented; waiting on the user's real-monorepo run to confirm the frontends were found.** Next in the approved plan (ADR-017): Phase 8 autoscaling + alarms, 9 medium-traffic defaults, 10 calibration tooling (blocked on bills), 11 hardening + `prodpath run`.
-- Works: static sites/SPAs are detected (`detect.py` `_frontend_kind`, nginx-html Dockerfiles in `classify_kind`; Next SSR is `web`), planned as `s3-site` + `cloudfront` (`rules.py` `rule_static`), rendered to `static_site.tf` (private bucket, OAC, TLS 1.2+, SPA fallback, bucket policy by SourceArn), deployed via a `frontend` step, priced from the global CloudFront offer by edge geography, and covered by two new traps. Fixture `mono_d` has goldens. 319 fast tests + 9 `-m tf` tests (real terraform validate incl. static sites), ruff, mypy --strict green.
-- Real-price forecast for mono_d (ap-south-1, prod, defaults): $276/month; each static site costs about $6/month, far less than endpoints ($76) or RDS ($67).
+- Phase: **8 (autoscaling and alarms) implemented.** Next in the approved plan (ADR-017): Phase 9 medium-traffic defaults, 10 calibration tooling (blocked on bills), 11 hardening + `prodpath run`. The user still has not run the pipeline on the real monorepo.
+- Works: per-service CPU target-tracking autoscaling (`var.service_scaling`, min = current count, max = 5x, services ignore `desired_count`), one alerts SNS topic + `alert_email` variable, 10 to 24 CloudWatch alarms per system defined once as data (`build_alarms` in `providers/aws/iac.py`, used by both `alarms.tf` and the cost model), forecast tasks follow traffic (`clamp(ceil(rps/rps_per_task), min, max)`, `rps_per_task` default 25, per-service override), alarms priced from `CW:AlarmMonitorUsage`, traps `autoscaling-max-cost` and `alarm-subscription-unconfirmed` (replacing `no-autoscaling`), a real alerts step. 339 fast tests + 9 `-m tf` tests (real terraform validate), ruff, mypy --strict green.
+- Real-price forecast (ap-south-1, prod, defaults): mono_a $215, mono_b ~$196, mono_c $426, mono_d $277 per month. With 20 req/s *average* and 25 KB responses on every service, mono_d is $1,328 expected and $5,735 at 5x spike (egress dominates), so Phase 9 must settle whether the user's "tens of req/s" means average or peak.
 - Code is at https://github.com/thepallavjha1/prodpath (public, main). Commit and push after each task.
-- Next action: user says "go" for Phase 8; separately the user runs `scan`, `facts`, `summarize`, `plan`, `forecast` on the real monorepo and reports misses.
+- Next action: user says "go" for Phase 9 (first answering average vs peak traffic) and runs the pipeline on the real monorepo.
 
 ## Decisions (short form; details in docs/DECISIONS.md)
 
@@ -74,10 +74,15 @@ Keep it short, factual and current. History goes in the changelog; design lives 
 - Traps are ranked by severity first, then estimated impact, so an unpriced high-severity trap (no outbound path) is listed first.
 - CloudFront prices are in the GLOBAL `AmazonCloudFront` offer (no region segment), keyed by edge geography (IN-, US-, EU-...); the per-region file only has Origin Shield and Lambda@Edge. `prices update` must be re-run once to add CloudFront to an existing snapshot. A usagetype prefix check like `ap-south` also matches `ap-southeast-*`: use `ap-south-`.
 - The CloudFront certificate must be in us-east-1 and is a required variable (`site_certificate_arn`); no second provider alias is generated. Price class defaults to PriceClass_All (cheaper classes exclude India/Asia).
+- The alerts SNS topic is deliberately NOT KMS-encrypted: CloudWatch cannot publish to a topic using the AWS-managed key. The e-mail subscription must be confirmed by link or no alarm reaches anyone.
+- Autoscaling is CPU-only (no request-count or queue-depth scaling); workers stay at their minimum in the forecast because their load is unknown. `rps_per_task` (25) is a placeholder: load-test one task to replace it.
+- In shell heredocs, `
+` inside Python strings and mixed quotes keep getting mangled; write patch scripts and templates with the Write tool and run them as files.
 - Build backend is hatchling (needed so `prodpath` is installable as a console script).
 
 ## Changelog
 
+- 2026-10-22 | phase-8 | Autoscaling + alarms in Terraform, build_alarms shared with the cost model, traffic-driven task counts and rps_per_task, alarm pricing, two traps, real alerts step (ADR-018) | Phase 8 roadmap | src/prodpath/providers/aws/*, src/prodpath/forecast.py, tests/*, docs/*
 - 2026-10-22 | phase-7 | Static site detection, rule_static, static_site.tf, frontend step, CloudFront pricing (global offer), two traps, fixture mono_d, ROADMAP re-plan (ADR-017) | Phase 7 roadmap | src/prodpath/{detect,facts/manifests,forecast,render}.py, src/prodpath/providers/aws/*, tests/*, docs/*
 - 2026-10-21 | phase-6 | Added forecast.py, providers/aws/{pricing,costs,traps}.py, render_forecast, `prices update` and `forecast` commands, Forecast model, usage.toml, 10 traps, committed TEST-ONLY price snapshot, hand-computed forecast tests (ADR-016) | Phase 6 roadmap | src/prodpath/*, tests/*, docs/*
 - 2026-10-21 | phase-5 | Added providers/aws/iac.py + 19 Jinja2 templates, iac_check.py (self-scan, fmt, validate), Component.params, reworked steps, Terraform section in PLAN.md, doctor mirror check, `tf` test marker; removed AWS-key-shaped literals from the repo after a GitHub secret-scanning alert (ADR-015) | Phase 5 roadmap | src/prodpath/{providers/aws,iac_check,render,cli,doctor,models}.py, tests/*, docs/*

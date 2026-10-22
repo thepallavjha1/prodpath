@@ -17,7 +17,7 @@ Run it inside a repo and get:
 
 ## Status
 
-Phases 0 to 7 built (scan, facts, local-LLM summaries, AWS plan, Terraform, cost forecast and traps, frontend hosting). See `MEMORY.md` for the current state and `docs/ROADMAP.md` for the plan.
+Phases 0 to 8 built (scan, facts, local-LLM summaries, AWS plan, Terraform, cost forecast and traps, frontend hosting, autoscaling and alarms). See `MEMORY.md` for the current state and `docs/ROADMAP.md` for the plan.
 
 ## Quickstart (once Phase 0 is done)
 

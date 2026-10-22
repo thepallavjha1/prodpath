@@ -103,14 +103,33 @@ def test_internet_egress_trap_only_exists_with_web_services() -> None:
     assert "internet-egress" not in traps
 
 
-def test_no_autoscaling_lists_fixed_task_counts_and_skips_workers_only_systems() -> None:
+def test_autoscaling_max_cost_is_the_extra_spend_at_the_maximum_task_count() -> None:
+    """api: 2 tasks expected, maximum 10. One task costs 0.5 x 730 x 0.04 + 1 x 730 x 0.005 =
+    14.60 + 3.65 = 18.25 a month, so running 8 more all month adds 8 x 18.25 = 146.00."""
     traps, _ = traps_for(DB_APP)
-    assert "api=2" in traps["no-autoscaling"].why
-    assert traps["no-autoscaling"].est_monthly_usd_impact is None
+    trap = traps["autoscaling-max-cost"]
+    assert trap.est_monthly_usd_impact == pytest.approx(146.00)
+    assert "api" in trap.why and "10" in trap.why
+    assert trap.severity == "medium"  # 146 is more than a quarter of the expected bill
+    assert "no-autoscaling" not in traps  # the old description-only trap is gone
+
+
+def test_autoscaling_max_cost_includes_workers_and_skips_systems_without_services() -> None:
+    """A worker (0.25 vCPU / 0.5 GB, 2 to 10 tasks): 7.30 + 1.825 = 9.125 per task x 8 = 73.00."""
     traps, _ = traps_for(
         [svc("job", "worker", [f("worker", "celery"), f("datastore", "postgres")])]
     )
-    assert "no-autoscaling" not in traps
+    assert traps["autoscaling-max-cost"].est_monthly_usd_impact == pytest.approx(73.00)
+    static, _ = traps_for([svc("site", "static", [f("framework", "vite")])])
+    assert "autoscaling-max-cost" not in static
+
+
+def test_alarm_subscription_trap_fires_whenever_alarms_exist() -> None:
+    traps, _ = traps_for(DB_APP)
+    trap = traps["alarm-subscription-unconfirmed"]
+    assert trap.severity == "medium" and "alert_email" in trap.why
+    static, _ = traps_for([svc("site", "static", [f("framework", "vite")])])
+    assert "alarm-subscription-unconfirmed" not in static
 
 
 def test_redis_replica_costs_one_extra_node_in_prod_and_nothing_in_nonprod() -> None:
@@ -201,7 +220,7 @@ def test_traps_are_ranked_by_severity_then_impact() -> None:
 
 
 def test_the_registry_has_one_function_per_seeded_trap() -> None:
-    assert len(TRAPS) == 12
+    assert len(TRAPS) == 13
     assert find_traps.__name__ == "find_traps" and TrapContext.__name__ == "TrapContext"
 
 

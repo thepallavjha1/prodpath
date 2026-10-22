@@ -5,11 +5,11 @@ every figure below can be verified with a calculator. Defaults used: 1 req/s per
 10 KB responses, 2 KB of logs per request, 730 hours (2,628,000 s) per month, low = 0.25x and
 spike = 5x traffic.
 
-Test prices: vCPU-h 0.04, GB-h 0.005, ALB 0.02/h + 0.01/LCU-h, public IPv4 0.005/h, interface
-endpoint 0.01/h + 0.01/GB, logs 0.50/GB ingested + 0.03/GB-month stored, S3 0.02/GB-month +
-0.00001/PUT + 0.000001/GET, SQS 0.000001/request, secret 0.50/month + 0.00001/API call, ECR
-0.10/GB-month, data out 0.10/GB, RDS postgres db.t4g.small 0.05/h single or 0.10/h Multi-AZ,
-gp3 0.10 or 0.20 per GB-month, Redis cache.t4g.micro 0.02/h.
+Test prices: alarm 0.10/month, vCPU-h 0.04, GB-h 0.005, ALB 0.02/h + 0.01/LCU-h, public IPv4
+0.005/h, interface endpoint 0.01/h + 0.01/GB, logs 0.50/GB ingested + 0.03/GB-month stored,
+S3 0.02/GB-month + 0.00001/PUT + 0.000001/GET, SQS 0.000001/request, secret 0.50/month +
+0.00001/API call, ECR 0.10/GB-month, data out 0.10/GB, RDS postgres db.t4g.small 0.05/h
+single or 0.10/h Multi-AZ, gp3 0.10 or 0.20 per GB-month, Redis cache.t4g.micro 0.02/h.
 """
 
 from pathlib import Path
@@ -52,22 +52,23 @@ def test_mono_b_matches_the_hand_computed_forecast(fixtures_dir: Path, tmp_path:
       Endpoints 4 x 2 AZ x 730 h x 0.01 = 58.40; Redis 2 x 730 x 0.02 = 29.20
       Secrets 2 x 0.50 + 120 calls x 0.00001 = 1.0012; ECR 4 GB x 0.10 = 0.40
       worker logs 1 GB x 0.50 + 1 GB-month x 0.03 = 0.53
-      -> constants 54.75 + 14.60 + 7.30 + 58.40 + 29.20 + 1.0012 + 0.40 + 0.53 = 166.1812
+      Alarms: api 4 (CPU, memory, 5xx, unhealthy) + worker 2 + Redis 2 = 8 x 0.10 = 0.80
+      -> constants 54.75 + 14.60 + 7.30 + 58.40 + 29.20 + 1.0012 + 0.40 + 0.53 + 0.80 = 166.9812
     Traffic-driven (api, expected): requests 2,628,000
       LCU: max(1/25, 1 x 10 x 3600 / 1e6 = 0.036) = 0.04 x 730 = 29.2 LCU-h x 0.01 = 0.292
       api logs: 5.256 GB x 0.50 = 2.628, stored 5.256 x 0.03 = 0.15768
       endpoint data: (5.256 + 1) GB x 0.01 = 0.06256; data out: 26.28 GB x 0.10 = 2.628
-      -> expected 0.292 + 2.628 + 0.15768 + 0.06256 + 2.628 = 5.76824 -> total 171.94944
+      -> expected 0.292 + 2.628 + 0.15768 + 0.06256 + 2.628 = 5.76824 -> total 172.74944
     Low (0.25x): LCU 0.073, logs 0.657 + 0.03942, endpoints (1.314 + 1) x 0.01 = 0.02314,
-      out 0.657 -> 1.44956 -> total 167.63076
+      out 0.657 -> 1.44956 -> total 168.43076
     Spike (5x): LCU 1.46, logs 13.14 + 0.7884, endpoints (26.28 + 1) x 0.01 = 0.2728, out 13.14
-      -> 28.8012 -> total 194.9824
+      -> 28.8012 -> total 195.7824
     """
     system = build_system(fixtures_dir / "mono_b", tmp_path)
     forecast = forecast_for(system)
-    assert forecast.total_low == pytest.approx(167.63076, **APPROX)
-    assert forecast.total_expected == pytest.approx(171.94944, **APPROX)
-    assert forecast.total_spike == pytest.approx(194.9824, **APPROX)
+    assert forecast.total_low == pytest.approx(168.43076, **APPROX)
+    assert forecast.total_expected == pytest.approx(172.74944, **APPROX)
+    assert forecast.total_spike == pytest.approx(195.7824, **APPROX)
     assert forecast.not_priced == []
 
 
@@ -77,17 +78,17 @@ def test_mono_a_matches_the_hand_computed_forecast(fixtures_dir: Path, tmp_path:
     Constants: Fargate 29.20 + 7.30 = 36.50; ALB 14.60 + IPv4 7.30; endpoints 58.40;
       RDS 730 x 0.10 = 73.00 + 20 x 0.20 = 4.00; S3 storage 10 x 0.02 = 0.20;
       secrets (2 slots + 1 RDS-managed) 1.50 + 120 x 0.00001 = 1.5012; ECR 2 x 0.10 = 0.20
-      -> 195.7012
+      alarms: root 4 + Postgres 2 = 6 x 0.10 = 0.60 -> 196.3012
     Traffic, expected: LCU 0.292; logs 2.628 + 0.15768; endpoint data 5.256 x 0.01 = 0.05256;
       S3 100,000 PUT x 0.00001 = 1.00 + 1,000,000 GET x 0.000001 = 1.00; data out 2.628
-      -> 7.75824 -> total 203.45944
-    Low: 0.073 + (0.657 + 0.03942) + 0.01314 + 0.50 + 0.657 = 1.93956 -> 197.64076
-    Spike: 1.46 + (13.14 + 0.7884) + 0.2628 + 10.00 + 13.14 = 38.7912 -> 234.4924
+      -> 7.75824 -> total 204.05944
+    Low: 0.073 + (0.657 + 0.03942) + 0.01314 + 0.50 + 0.657 = 1.93956 -> 198.24076
+    Spike: 1.46 + (13.14 + 0.7884) + 0.2628 + 10.00 + 13.14 = 38.7912 -> 235.0924
     """
     forecast = forecast_for(build_system(fixtures_dir / "mono_a", tmp_path))
-    assert forecast.total_low == pytest.approx(197.64076, **APPROX)
-    assert forecast.total_expected == pytest.approx(203.45944, **APPROX)
-    assert forecast.total_spike == pytest.approx(234.4924, **APPROX)
+    assert forecast.total_low == pytest.approx(198.24076, **APPROX)
+    assert forecast.total_expected == pytest.approx(204.05944, **APPROX)
+    assert forecast.total_spike == pytest.approx(235.0924, **APPROX)
 
 
 def test_mono_c_matches_the_hand_computed_forecast(fixtures_dir: Path, tmp_path: Path) -> None:
@@ -97,17 +98,18 @@ def test_mono_c_matches_the_hand_computed_forecast(fixtures_dir: Path, tmp_path:
     Constants: Fargate 5 x 36.50 = 182.50 + cron (1.25 vCPU-h x 0.04 + 2.5 GB-h x 0.005 = 0.0625)
       ALB 14.60 + IPv4 7.30; endpoints 58.40; RDS 77.00; Redis 29.20;
       secrets (3 + 1 managed) x 0.50 = 2.00 + 180 calls x 0.00001 = 0.0018; ECR 6 x 2 x 0.10 = 1.20;
-      cron logs 0.50 + 0.03 -> 372.7943
+      cron logs 0.50 + 0.03; alarms 5 web x 4 + Postgres 2 + Redis 2 = 24 x 0.10 = 2.40
+      -> 375.1943
     Traffic, expected: LCU (5 + 2 = 7 req/s: max(0.28, 0.252) = 0.28) x 730 x 0.01 = 2.044;
       web logs 5 x (2.628 + 0.15768) = 13.9284; endpoint data (26.28 + 1) x 0.01 = 0.2728;
-      data out 5 x 26.28 = 131.4 GB x 0.10 = 13.14 -> 29.3852 -> total 402.1795
-    Low: 0.511 + 3.4821 + 0.0757 + 3.285 = 7.3538 -> 380.1481
-    Spike: 10.22 + 69.642 + 1.324 + 65.70 = 146.886 -> 519.6803
+      data out 5 x 26.28 = 131.4 GB x 0.10 = 13.14 -> 29.3852 -> total 404.5795
+    Low: 0.511 + 3.4821 + 0.0757 + 3.285 = 7.3538 -> 382.5481
+    Spike: 10.22 + 69.642 + 1.324 + 65.70 = 146.886 -> 522.0803
     """
     forecast = forecast_for(build_system(fixtures_dir / "mono_c", tmp_path))
-    assert forecast.total_low == pytest.approx(380.1481, **APPROX)
-    assert forecast.total_expected == pytest.approx(402.1795, **APPROX)
-    assert forecast.total_spike == pytest.approx(519.6803, **APPROX)
+    assert forecast.total_low == pytest.approx(382.5481, **APPROX)
+    assert forecast.total_expected == pytest.approx(404.5795, **APPROX)
+    assert forecast.total_spike == pytest.approx(522.0803, **APPROX)
     inferred = [a for a in forecast.assumptions if a.source == "inferred"]
     assert [a.name for a in inferred] == ["internal_http_calls_per_request"]
     assert "apps-gateway->apps-billing" in inferred[0].note
@@ -232,20 +234,21 @@ def test_mono_d_matches_the_hand_computed_forecast(fixtures_dir: Path, tmp_path:
     Compute and data (2 web services, 2 tasks each):
       Fargate 2 x 36.50 = 73.00; ALB 14.60 + IPv4 7.30; endpoints 4 x 2 x 730 x 0.01 = 58.40;
       RDS 73.00 + 4.00 = 77.00; secrets (1 slot + 1 managed) 1.00 + 60 calls x 0.00001 = 1.0006;
-      ECR 2 x 2 GB x 0.10 = 0.40 -> constants 231.7006 + static storage 3 x 0.5 x 0.02 = 0.03
+      ECR 2 x 2 GB x 0.10 = 0.40; alarms (api 4 + dashboard 4 + Postgres 2) 10 x 0.10 = 1.00
+      -> constants 232.7006 + static storage 3 x 0.5 x 0.02 = 0.03
     Traffic, expected: LCU (2 req/s: max(0.08, 0.072) x 730 x 0.01) = 0.584;
       logs 2 x 2.78568 = 5.57136; endpoint data 10.512 GB x 0.01 = 0.10512;
       internet egress 52.56 GB x 0.10 = 5.256
     Static, per site: requests 2,628,000 x 0.000001 = 2.628; data out 26.28 GB x 0.10 = 2.628;
       S3 GET misses 262,800 x 0.000001 = 0.2628 -> 5.5188 x 3 = 16.5564 (+ storage counted above)
-    Expected = 231.7306 + 0.584 + 5.57136 + 0.10512 + 5.256 + 16.5564 = 259.80348
-    Low (0.25x): 231.7306 + 0.146 + 1.39284 + 0.02628 + 1.314 + 3 x 1.3797 = 238.74882
-    Spike (5x): 231.7306 + 2.92 + 27.8568 + 0.5256 + 26.28 + 3 x 27.594 = 372.095
+    Expected = 232.7306 + 0.584 + 5.57136 + 0.10512 + 5.256 + 16.5564 = 260.80348
+    Low (0.25x): 232.7306 + 0.146 + 1.39284 + 0.02628 + 1.314 + 3 x 1.3797 = 239.74882
+    Spike (5x): 232.7306 + 2.92 + 27.8568 + 0.5256 + 26.28 + 3 x 27.594 = 373.095
     """
     forecast = forecast_for(build_system(fixtures_dir / "mono_d", tmp_path))
-    assert forecast.total_low == pytest.approx(238.74882, **APPROX)
-    assert forecast.total_expected == pytest.approx(259.80348, **APPROX)
-    assert forecast.total_spike == pytest.approx(372.095, **APPROX)
+    assert forecast.total_low == pytest.approx(239.74882, **APPROX)
+    assert forecast.total_expected == pytest.approx(260.80348, **APPROX)
+    assert forecast.total_spike == pytest.approx(373.095, **APPROX)
     assert forecast.not_priced == []
     geography = [a for a in forecast.assumptions if a.name == "cloudfront_edge_geography"]
     assert geography and geography[0].source == "inferred" and "IN" in geography[0].note
@@ -302,3 +305,77 @@ def test_missing_cloudfront_prices_are_listed_not_guessed(
         for item in forecast.not_priced
     )
     assert not any(ln.dimension == "data transfer out" for ln in forecast.lines)
+
+
+def test_web_tasks_scale_with_traffic_between_the_bounds(
+    fixtures_dir: Path, tmp_path: Path
+) -> None:
+    """mono_a root (0.5 vCPU, bounds 2 to 10, 25 req/s per task) at 100 req/s expected:
+    low 25 req/s -> ceil(1) = 1 -> held at the minimum 2: 0.5 x 2 x 730 x 0.04 = 29.20
+    expected 100 req/s -> 4 tasks: 0.5 x 4 x 730 x 0.04 = 58.40
+    spike 500 req/s -> 20 tasks -> capped at the maximum 10: 0.5 x 10 x 730 x 0.04 = 146.00
+    """
+    system = build_system(fixtures_dir / "mono_a", tmp_path)
+    forecast = forecast_for(system, UsageBook({"avg_requests_per_second": 100.0}))
+    vcpu = line(forecast, "ecs-svc-root", "vCPU")
+    assert (vcpu.usd_low, vcpu.usd_expected, vcpu.usd_spike) == pytest.approx(
+        (29.20, 58.40, 146.00)
+    )
+    memory = line(forecast, "ecs-svc-root", "memory")  # 1 GB each: 2, 4 and 10 tasks x 730 x 0.005
+    assert (memory.usd_low, memory.usd_expected, memory.usd_spike) == pytest.approx(
+        (7.30, 14.60, 36.50)
+    )
+    assumption = next(a for a in forecast.assumptions if a.name == "rps_per_task")
+    assert (assumption.value, assumption.source) == (25.0, "default")
+
+
+def test_a_per_service_capacity_override_changes_only_that_service(
+    fixtures_dir: Path, tmp_path: Path
+) -> None:
+    system = build_system(fixtures_dir / "mono_c", tmp_path)
+    usage = UsageBook(
+        {"avg_requests_per_second": 100.0},
+        {"apps-web": {"rps_per_task": 100.0}},  # a fast service: one task per 100 req/s
+    )
+    forecast = forecast_for(system, usage)
+    fast = line(forecast, "ecs-svc-apps-web", "vCPU").qty_expected  # 100 / 100 -> 1 -> min 2
+    slow = line(forecast, "ecs-svc-apps-notifier", "vCPU").qty_expected  # 100 / 25 -> 4 tasks
+    assert fast == pytest.approx(0.5 * 2 * 730) and slow == pytest.approx(0.5 * 4 * 730)
+    sources = {a.name: a.source for a in forecast.assumptions}
+    assert sources["rps_per_task@apps-web"] == "user" and sources["rps_per_task"] == "default"
+
+
+def test_internal_calls_count_towards_the_callee_s_load(fixtures_dir: Path, tmp_path: Path) -> None:
+    """apps-billing receives its own 100 req/s plus apps-gateway's 100: 200 / 25 = 8 tasks."""
+    system = build_system(fixtures_dir / "mono_c", tmp_path)
+    forecast = forecast_for(system, UsageBook({"avg_requests_per_second": 100.0}))
+    assert line(forecast, "ecs-svc-apps-billing", "vCPU").qty_expected == pytest.approx(
+        0.5 * 8 * 730
+    )
+    assert line(forecast, "ecs-svc-apps-notifier", "vCPU").qty_expected == pytest.approx(
+        0.5 * 4 * 730
+    )
+
+
+def test_workers_and_scheduled_jobs_do_not_scale_with_web_traffic(
+    fixtures_dir: Path, tmp_path: Path
+) -> None:
+    system = build_system(fixtures_dir / "mono_b", tmp_path)
+    forecast = forecast_for(system, UsageBook({"avg_requests_per_second": 500.0}))
+    worker = line(forecast, "ecs-svc-worker", "vCPU")
+    assert worker.usd_low == worker.usd_expected == worker.usd_spike == pytest.approx(14.60)
+
+
+def test_alarms_are_priced_from_the_same_list_the_terraform_uses(
+    fixtures_dir: Path, tmp_path: Path
+) -> None:
+    from prodpath.providers.aws.iac import build_alarms
+
+    system = build_system(fixtures_dir / "mono_c", tmp_path)
+    provider = AwsProvider(PRICES)
+    arch = provider.choose(system, Prefs())
+    forecast = provider.forecast(arch, system, UsageBook())
+    alarms = line(forecast, "alarms", "standard alarms")
+    assert alarms.qty_expected == len(build_alarms(arch)) == 24
+    assert alarms.usd_expected == pytest.approx(2.40)
+    assert alarms.usd_low == alarms.usd_expected == alarms.usd_spike

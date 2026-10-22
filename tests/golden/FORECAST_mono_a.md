@@ -1,18 +1,18 @@
-<!-- prodpath 0.0.1 | generated 2000-01-01T00:00:00Z | input 2a783c868107 -->
+<!-- prodpath 0.0.1 | generated 2000-01-01T00:00:00Z | input 9fb7aab5666f -->
 
 # What will this cost me, and what can bite me?
 
 Target: **AWS**, region `ap-south-1`, environment `prod`.
 
-**Expected: about $203.46 per month**, ranging from $197.64 (low) to $234.49 (spike).
+**Expected: about $204.06 per month**, ranging from $198.24 (low) to $235.09 (spike).
 
 | Scenario | Traffic vs expected | USD per month |
 |---|---|---|
-| Low | 0.25x | $197.64 |
-| Expected | 1x | $203.46 |
-| Spike | 5x | $234.49 |
+| Low | 0.25x | $198.24 |
+| Expected | 1x | $204.06 |
+| Spike | 5x | $235.09 |
 
-11 of 11 assumptions are defaults, not measurements: supply a `usage.toml` to replace them with your real numbers.
+12 of 12 assumptions are defaults, not measurements: supply a `usage.toml` to replace them with your real numbers.
 
 ## Biggest cost drivers
 
@@ -33,6 +33,7 @@ Every number below depends on these. **Source** says where each came from: `user
 | `hours_per_month` | 730 | h | **default** | AWS billing convention for a month. |
 | `log_kb_per_request` | 2 | KB | **default** | Log volume per request (not extracted from code yet). |
 | `response_kb` | 10 | KB | **default** | Average response size sent to the internet. |
+| `rps_per_task` | 25 | req/s | **default** | Requests per second one task handles at the CPU target. |
 | `s3_gets_per_month` | 1e+06 | requests | **default** | S3 GET requests per bucket. |
 | `s3_puts_per_month` | 100000 | requests | **default** | S3 PUT/COPY/POST/LIST requests per bucket. |
 | `s3_stored_gb` | 10 | GB | **default** | Stored data per bucket. |
@@ -64,7 +65,8 @@ Quantities are monthly (730 hours). Always-on resources do not change between sc
 | `secrets` | API requests at task start | 120.00 | requests | $1e-05 | `TEST/secrets.api_request/secrets.api_request` | $0.00 | $0.00 | $0.00 |
 | `ecr` | 1 repositories | 2.00 | GB-month | $0.1 | `TEST/ecr.storage_gb_month/ecr.storage_gb_month` | $0.20 | $0.20 | $0.20 |
 | `internet-egress` | data transfer out to the internet | 26.28 | GB | $0.1 | `TEST/dt.out_gb/dt.out_gb` | $0.66 | $2.63 | $13.14 |
-| **Total** |  |  |  |  |  | $197.64 | $203.46 | $234.49 |
+| `alarms` | 6 standard alarms | 6.00 | alarm-month | $0.1 | `TEST/cloudwatch.alarm_month/cloudwatch.alarm_month` | $0.60 | $0.60 | $0.60 |
+| **Total** |  |  |  |  |  | $198.24 | $204.06 | $235.09 |
 
 ## What can bite me
 
@@ -79,16 +81,25 @@ Ranked by severity, then estimated monthly impact.
 
 **Fix:** Keep only the endpoints you need, run one AZ in non-production, or compare against a NAT gateway for your traffic before deciding.
 
-### 2. no-autoscaling (medium)
+### 2. autoscaling-max-cost (medium)
 
-**Where:** ecs.tf (aws_ecs_service desired_count)  
+**Where:** autoscaling.tf (var.service_scaling max_count)  
+**Impact:** about $146.00/month
+
+**Why it bites:** Services scale out on CPU (root up to 10 tasks). Held at those maximums all month they would cost about $146.00 more than the expected forecast. A traffic spike, a retry storm or a slow dependency can push a service there.
+
+**Fix:** Set max_count to what you are willing to pay for, alarm on running task count, and load-test one task to replace the default rps_per_task assumption with a real number.
+
+### 3. alarm-subscription-unconfirmed (medium)
+
+**Where:** alarms.tf (aws_sns_topic_subscription.alerts_email)  
 **Impact:** not priced
 
-**Why it bites:** Task counts are fixed (root=2) and nothing scales them. A traffic spike can saturate the tasks, and quiet periods still pay for full capacity.
+**Why it bites:** AWS sends a confirmation e-mail to alert_email when the subscription is created. Until someone clicks the link, every alarm fires into a topic with no listeners and nobody is told that something is wrong.
 
-**Fix:** Add aws_appautoscaling_target and a target-tracking policy on CPU or request count per service, with sensible minimum and maximum counts.
+**Fix:** Apply, open the confirmation e-mail immediately, and test with `aws cloudwatch set-alarm-state` on one alarm. Consider a shared mailbox so alerts do not depend on one person.
 
-### 3. public-ipv4 (low)
+### 4. public-ipv4 (low)
 
 **Where:** alb.tf (aws_lb.main)  
 **Impact:** about $7.30/month
@@ -97,7 +108,7 @@ Ranked by severity, then estimated monthly impact.
 
 **Fix:** Accept it for the one shared load balancer; never add a load balancer per service.
 
-### 4. internet-egress (low)
+### 5. internet-egress (low)
 
 **Where:** alb.tf / static_site.tf (every service that serves users)  
 **Impact:** about $2.63/month
@@ -106,7 +117,7 @@ Ranked by severity, then estimated monthly impact.
 
 **Fix:** Compress responses, cache at a CDN, and avoid returning large payloads by default.
 
-### 5. log-ingestion (low)
+### 6. log-ingestion (low)
 
 **Where:** ecs.tf (aws_cloudwatch_log_group)  
 **Impact:** about $2.63/month
@@ -115,7 +126,7 @@ Ranked by severity, then estimated monthly impact.
 
 **Fix:** Log at INFO or above in production, do not log request bodies, sample noisy lines, and keep retention short (set to 30 days here).
 
-### 6. container-insights (low)
+### 7. container-insights (low)
 
 **Where:** ecs.tf (aws_ecs_cluster.main, containerInsights = enabled)  
 **Impact:** not priced
@@ -124,7 +135,7 @@ Ranked by severity, then estimated monthly impact.
 
 **Fix:** Set the setting to disabled until you need the dashboards, or budget for it.
 
-### 7. cross-az-traffic (low)
+### 8. cross-az-traffic (low)
 
 **Where:** ecs.tf / rds.tf / elasticache.tf  
 **Impact:** not priced

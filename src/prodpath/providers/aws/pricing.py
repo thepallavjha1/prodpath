@@ -63,6 +63,7 @@ SPECS = [
     Spec("vpc.endpoint_gb", "AmazonVPC", "VpcEndpoint-Bytes"),
     Spec("cloudwatch.logs_ingest_gb", "AmazonCloudWatch", "DataProcessing-Bytes",
          (("operation", "^PutLogEvents$"), ("group", "^Ingested Logs$"))),
+    Spec("cloudwatch.alarm_month", "AmazonCloudWatch", "CW:AlarmMonitorUsage"),
     Spec("cloudwatch.logs_storage_gb_month", "AmazonCloudWatch", "TimedStorage-ByteHrs",
          (("group", "Standard Storage"),)),
     Spec("s3.storage_gb_month", "AmazonS3", "TimedStorage-ByteHrs",

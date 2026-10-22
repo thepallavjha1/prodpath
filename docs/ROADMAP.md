@@ -96,10 +96,10 @@ Do not start the next phase "while you're here". If a task belongs to a later ph
 
 **Goal:** generated Terraform scales services and notifies someone when things break.
 
-- [ ] Application Auto Scaling target tracking per service; services ignore `desired_count`
-- [ ] Alarms (ALB, ECS, RDS, Redis, queues) to one SNS topic
-- [ ] Autoscale-aware forecast with a labelled `rps_per_task` assumption; alarm costs
-- [ ] `autoscaling-max-cost` and `alarm-subscription-unconfirmed` traps replace `no-autoscaling`
+- [x] Application Auto Scaling target tracking per service; services ignore `desired_count` (ADR-018)
+- [x] Alarms (ALB, ECS, RDS, Redis, queues) to one SNS topic
+- [x] Autoscale-aware forecast with a labelled `rps_per_task` assumption; alarm costs
+- [x] `autoscaling-max-cost` and `alarm-subscription-unconfirmed` traps replace `no-autoscaling`
 
 **Exit:** `terraform validate` passes with autoscaling and alarms; forecast hand-checks match.
 
@@ -107,7 +107,7 @@ Do not start the next phase "while you're here". If a task belongs to a later ph
 
 **Goal:** the forecast starts from the traffic the user expects.
 
-- [ ] Default traffic assumptions raised to a "medium" profile, still labelled `default`
+- [ ] Default traffic assumptions raised to a "medium" profile, still labelled `default` (decide first whether the user's "tens of req/s" is an average or a peak: 20 req/s *average* is already ~$1,300/month for five services)
 - [ ] `prodpath forecast --write-usage-template usage.toml`
 - [ ] Hand-computed tests and goldens recomputed
 

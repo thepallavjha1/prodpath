@@ -11,6 +11,8 @@ image_tags = {
   "apps-web" = "<GIT_SHA>"
 }
 
+alert_email = "<YOUR_EMAIL>"
+
 certificate_arn = "<ACM_CERTIFICATE_ARN>"
 
 domain_name = "<YOUR_DOMAIN>"

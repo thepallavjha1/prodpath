@@ -82,9 +82,9 @@ def test_cli_forecast_writes_only_under_prodpath(
     after = {p.relative_to(repo).as_posix() for p in repo.rglob("*") if p.is_file()}
     assert all(p.startswith(".prodpath/") for p in after - before)
     out = capsys.readouterr().out
-    assert "expected $171.95/month (low $167.63, spike $194.98)" in out
+    assert "expected $172.75/month (low $168.43, spike $195.78)" in out
     document = (repo / ".prodpath/out/FORECAST.md").read_text(encoding="utf-8")
-    assert "**Expected: about $171.95 per month**" in document
+    assert "**Expected: about $172.75 per month**" in document
     assert Forecast.model_validate_json((repo / ".prodpath/forecast.json").read_text())
 
 

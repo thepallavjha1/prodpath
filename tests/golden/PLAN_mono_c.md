@@ -2,7 +2,7 @@
 
 # Production plan
 
-Target: **AWS**, region `ap-south-1`, environment `prod`. 8 services detected, 33 components planned.
+Target: **AWS**, region `ap-south-1`, environment `prod`. 8 services detected, 40 components planned.
 
 ## Services
 
@@ -54,6 +54,13 @@ Target: **AWS**, region `ap-south-1`, environment `prod`. 8 services detected, 3
 | `ecs-svc-apps-users` | ecs-service-web | Fargate 0.5 vCPU / 1 GB, 2 tasks (default) | Stateless HTTP container behind the shared load balancer. | `apps/users/Dockerfile:3` |
 | `ecs-svc-apps-web` | ecs-service-web | Fargate 0.5 vCPU / 1 GB, 2 tasks (default) | Stateless HTTP container behind the shared load balancer. | `apps/web/Dockerfile:3` |
 | `cron-apps-reports` | scheduled-task | Fargate 0.25 vCPU / 0.5 GB per run | Scheduled job: EventBridge Scheduler starts a one-off Fargate task. | `apps/reports/Dockerfile:1` |
+| `autoscaling-apps-billing` | autoscaling | 2 to 10 tasks, target CPU 60% | Scales apps-billing with load instead of a fixed task count; the bounds are defaults and live in var.service_scaling. | `apps/billing/Dockerfile:3` |
+| `autoscaling-apps-gateway` | autoscaling | 2 to 10 tasks, target CPU 60% | Scales apps-gateway with load instead of a fixed task count; the bounds are defaults and live in var.service_scaling. | `apps/gateway/Dockerfile:3` |
+| `autoscaling-apps-notifier` | autoscaling | 2 to 10 tasks, target CPU 60% | Scales apps-notifier with load instead of a fixed task count; the bounds are defaults and live in var.service_scaling. | `apps/notifier/Dockerfile:3` |
+| `autoscaling-apps-users` | autoscaling | 2 to 10 tasks, target CPU 60% | Scales apps-users with load instead of a fixed task count; the bounds are defaults and live in var.service_scaling. | `apps/users/Dockerfile:3` |
+| `autoscaling-apps-web` | autoscaling | 2 to 10 tasks, target CPU 60% | Scales apps-web with load instead of a fixed task count; the bounds are defaults and live in var.service_scaling. | `apps/web/Dockerfile:3` |
+| `alerts` | sns-alerts | 1 topic, e-mail subscription | One place where every alarm is delivered. The topic is not KMS-encrypted because CloudWatch cannot publish to a topic that uses the AWS-managed key. | `apps/billing/Dockerfile:3`<br>`apps/gateway/Dockerfile:3`<br>`apps/notifier/Dockerfile:3` |
+| `alarms` | alarms | CloudWatch alarms on errors, saturation, storage and queue depth | Without alarms nobody is told when a service, database or queue starts failing. | `apps/billing/Dockerfile:3`<br>`apps/gateway/Dockerfile:3`<br>`apps/notifier/Dockerfile:3` |
 
 ## Steps
 
@@ -150,15 +157,18 @@ Terraform created a role that only your repository and branch can assume through
 
 **Verify:** A workflow run on the allowed branch assumes the role and deploys; other branches are denied.
 
-### 7. Add alarms (not generated yet)
+### 7. Confirm alert notifications and check autoscaling
 
-Log groups and their retention come from Terraform. Alarms are not generated in this version; without them nobody is told when something breaks.
+Terraform created the alarms, the alerts topic and the autoscaling policies. The e-mail subscription is the one manual part: AWS only starts delivering after the confirmation link in alert_email's inbox is clicked. Thresholds are defaults; tune them once you know normal behaviour.
 
 ```bash
-# Suggested minimum: ALB 5xx rate and unhealthy host count, ECS service CPU and memory, RDS CPU, free storage and connections, and an SNS topic or chat webhook
+# Open the e-mail AWS sent to the alert_email address in terraform.tfvars and click 'Confirm subscription'. Until you do, no alarm reaches anyone.
+aws sns list-subscriptions-by-topic --topic-arn <ALERTS_TOPIC_ARN>   # SubscriptionArn must not say PendingConfirmation
+aws cloudwatch set-alarm-state --alarm-name <ALARM_NAME> --state-value ALARM --state-reason "notification test"
+aws application-autoscaling describe-scaling-policies --service-namespace ecs   # one CPU policy per service; min/max come from var.service_scaling
 ```
 
-**Verify:** Trigger a test alarm and confirm you receive the notification.
+**Verify:** A test alarm e-mail arrives, and each scalable service shows a scaling policy.
 
 ### 8. Know how to roll back before you need to
 
@@ -189,7 +199,7 @@ curl -fsS https://<HOST_FOR_ECS_SVC_APPS_WEB>/health
 
 ## Terraform
 
-17 files were written to `.prodpath/out/terraform/`: `README.md`, `alb.tf`, `backend.tf`, `ecr.tf`, `ecs.tf`, `elasticache.tf`, `github_oidc.tf`, `iam.tf`, `main.tf`, `network.tf`, `outputs.tf`, `rds.tf`, `scheduler.tf`, `secrets.tf`, `terraform.tfvars.example`, `variables.tf`, `versions.tf`.
+19 files were written to `.prodpath/out/terraform/`: `README.md`, `alarms.tf`, `alb.tf`, `autoscaling.tf`, `backend.tf`, `ecr.tf`, `ecs.tf`, `elasticache.tf`, `github_oidc.tf`, `iam.tf`, `main.tf`, `network.tf`, `outputs.tf`, `rds.tf`, `scheduler.tf`, `secrets.tf`, `terraform.tfvars.example`, `variables.tf`, `versions.tf`.
 
 **Checks run by this tool**
 
@@ -209,6 +219,7 @@ No specific risks were derived. See the unknowns below.
 
 ## Unknowns and open questions
 
+- Alarm thresholds are defaults, and alerts reach nobody until the e-mail subscription for var.alert_email is confirmed.
 - Domain name and ACM certificate are needed for HTTPS on the load balancer.
 - Redis: in-transit encryption is on, so clients must connect with TLS (rediss://); check each service's Redis client settings.
 - Traffic and data volume are unknown: all sizing is a default starting point.

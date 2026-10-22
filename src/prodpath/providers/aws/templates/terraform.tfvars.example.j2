@@ -9,6 +9,10 @@ image_tags = {
 {% endfor %}
 }
 {% endif %}
+{% if alarms %}
+
+alert_email = "<YOUR_EMAIL>"
+{% endif %}
 {% if has_alb %}
 
 certificate_arn = "<ACM_CERTIFICATE_ARN>"

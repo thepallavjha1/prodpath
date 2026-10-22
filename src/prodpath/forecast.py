@@ -22,6 +22,7 @@ DEFAULTS: dict[str, tuple[float, str, str]] = {
     "response_kb": (10.0, "KB", "Average response size sent to the internet."),
     "log_kb_per_request": (2.0, "KB", "Log volume per request (not extracted from code yet)."),
     "worker_log_gb_per_month": (1.0, "GB", "Log volume per worker or scheduled service."),
+    "rps_per_task": (25.0, "req/s", "Requests per second one task handles at the CPU target."),
     "scenario_low": (0.25, "x", "Traffic multiplier for the low scenario."),
     "scenario_spike": (5.0, "x", "Traffic multiplier for the spike scenario."),
     "s3_stored_gb": (10.0, "GB", "Stored data per bucket."),
@@ -51,6 +52,7 @@ DEFAULTS: dict[str, tuple[float, str, str]] = {
 # Only these can be overridden for a single service in `[service."<id>"]`.
 PER_SERVICE = {
     "avg_requests_per_second", "response_kb", "log_kb_per_request", "worker_log_gb_per_month",
+    "rps_per_task",
     "cron_runs_per_month", "cron_minutes_per_run",
 }  # fmt: skip
 

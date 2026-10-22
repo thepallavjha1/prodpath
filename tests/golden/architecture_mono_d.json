@@ -444,9 +444,102 @@
         "memory": "1024",
         "desired_count": "2"
       }
+    },
+    {
+      "type": "autoscaling",
+      "name": "autoscaling-apps-api",
+      "sizing": "2 to 10 tasks, target CPU 60%",
+      "reason": "Scales apps-api with load instead of a fixed task count; the bounds are defaults and live in var.service_scaling.",
+      "serves": [
+        "apps-api"
+      ],
+      "evidence": [
+        {
+          "path": "apps/api/Dockerfile",
+          "line": 4,
+          "snippet": "EXPOSE 8000"
+        }
+      ],
+      "items": [],
+      "params": {
+        "min_count": "2",
+        "max_count": "10",
+        "cpu_target": "60"
+      }
+    },
+    {
+      "type": "autoscaling",
+      "name": "autoscaling-apps-dashboard",
+      "sizing": "2 to 10 tasks, target CPU 60%",
+      "reason": "Scales apps-dashboard with load instead of a fixed task count; the bounds are defaults and live in var.service_scaling.",
+      "serves": [
+        "apps-dashboard"
+      ],
+      "evidence": [
+        {
+          "path": "apps/dashboard/package.json",
+          "line": 4,
+          "snippet": "\"dependencies\": {\"next\": \"^14\", \"react\": \"^18\"}"
+        }
+      ],
+      "items": [],
+      "params": {
+        "min_count": "2",
+        "max_count": "10",
+        "cpu_target": "60"
+      }
+    },
+    {
+      "type": "sns-alerts",
+      "name": "alerts",
+      "sizing": "1 topic, e-mail subscription",
+      "reason": "One place where every alarm is delivered. The topic is not KMS-encrypted because CloudWatch cannot publish to a topic that uses the AWS-managed key.",
+      "serves": [
+        "apps-api",
+        "apps-dashboard"
+      ],
+      "evidence": [
+        {
+          "path": "apps/api/Dockerfile",
+          "line": 4,
+          "snippet": "EXPOSE 8000"
+        },
+        {
+          "path": "apps/dashboard/package.json",
+          "line": 4,
+          "snippet": "\"dependencies\": {\"next\": \"^14\", \"react\": \"^18\"}"
+        }
+      ],
+      "items": [],
+      "params": {}
+    },
+    {
+      "type": "alarms",
+      "name": "alarms",
+      "sizing": "CloudWatch alarms on errors, saturation, storage and queue depth",
+      "reason": "Without alarms nobody is told when a service, database or queue starts failing.",
+      "serves": [
+        "apps-api",
+        "apps-dashboard"
+      ],
+      "evidence": [
+        {
+          "path": "apps/api/Dockerfile",
+          "line": 4,
+          "snippet": "EXPOSE 8000"
+        },
+        {
+          "path": "apps/dashboard/package.json",
+          "line": 4,
+          "snippet": "\"dependencies\": {\"next\": \"^14\", \"react\": \"^18\"}"
+        }
+      ],
+      "items": [],
+      "params": {}
     }
   ],
   "unknowns": [
+    "Alarm thresholds are defaults, and alerts reach nobody until the e-mail subscription for var.alert_email is confirmed.",
     "Domain name and ACM certificate are needed for HTTPS on the load balancer.",
     "Traffic and data volume are unknown: all sizing is a default starting point.",
     "apps-dashboard: no listening port found; set the container port.",

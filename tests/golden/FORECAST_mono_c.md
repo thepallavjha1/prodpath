@@ -1,18 +1,18 @@
-<!-- prodpath 0.0.1 | generated 2000-01-01T00:00:00Z | input ce452fc2f379 -->
+<!-- prodpath 0.0.1 | generated 2000-01-01T00:00:00Z | input cd0344d44b4b -->
 
 # What will this cost me, and what can bite me?
 
 Target: **AWS**, region `ap-south-1`, environment `prod`.
 
-**Expected: about $402.18 per month**, ranging from $380.15 (low) to $519.68 (spike).
+**Expected: about $404.58 per month**, ranging from $382.55 (low) to $522.08 (spike).
 
 | Scenario | Traffic vs expected | USD per month |
 |---|---|---|
-| Low | 0.25x | $380.15 |
-| Expected | 1x | $402.18 |
-| Spike | 5x | $519.68 |
+| Low | 0.25x | $382.55 |
+| Expected | 1x | $404.58 |
+| Spike | 5x | $522.08 |
 
-11 of 12 assumptions are defaults, not measurements: supply a `usage.toml` to replace them with your real numbers.
+12 of 13 assumptions are defaults, not measurements: supply a `usage.toml` to replace them with your real numbers.
 
 ## Biggest cost drivers
 
@@ -36,6 +36,7 @@ Every number below depends on these. **Source** says where each came from: `user
 | `internal_http_calls_per_request` | 1 | calls | **inferred** | One internal request through the load balancer per request, for each service-to-service URL found in the code: apps-gateway->apps-billing, apps-gateway->apps-users |
 | `log_kb_per_request` | 2 | KB | **default** | Log volume per request (not extracted from code yet). |
 | `response_kb` | 10 | KB | **default** | Average response size sent to the internet. |
+| `rps_per_task` | 25 | req/s | **default** | Requests per second one task handles at the CPU target. |
 | `scenario_low` | 0.25 | x | **default** | Traffic multiplier for the low scenario. |
 | `scenario_spike` | 5 | x | **default** | Traffic multiplier for the spike scenario. |
 | `task_starts_per_month` | 30 | starts | **default** | Starts per task per month; each start reads its secrets. |
@@ -83,13 +84,23 @@ Quantities are monthly (730 hours). Always-on resources do not change between sc
 | `secrets` | API requests at task start | 180.00 | requests | $1e-05 | `TEST/secrets.api_request/secrets.api_request` | $0.00 | $0.00 | $0.00 |
 | `ecr` | 6 repositories | 12.00 | GB-month | $0.1 | `TEST/ecr.storage_gb_month/ecr.storage_gb_month` | $1.20 | $1.20 | $1.20 |
 | `internet-egress` | data transfer out to the internet | 131.40 | GB | $0.1 | `TEST/dt.out_gb/dt.out_gb` | $3.29 | $13.14 | $65.70 |
-| **Total** |  |  |  |  |  | $380.15 | $402.18 | $519.68 |
+| `alarms` | 24 standard alarms | 24.00 | alarm-month | $0.1 | `TEST/cloudwatch.alarm_month/cloudwatch.alarm_month` | $2.40 | $2.40 | $2.40 |
+| **Total** |  |  |  |  |  | $382.55 | $404.58 | $522.08 |
 
 ## What can bite me
 
 Ranked by severity, then estimated monthly impact.
 
-### 1. no-outbound-path (high)
+### 1. autoscaling-max-cost (high)
+
+**Where:** autoscaling.tf (var.service_scaling max_count)  
+**Impact:** about $730.00/month
+
+**Why it bites:** Services scale out on CPU (apps-billing up to 10 tasks; apps-gateway up to 10 tasks; apps-notifier up to 10 tasks; apps-users up to 10 tasks; apps-web up to 10 tasks). Held at those maximums all month they would cost about $730.00 more than the expected forecast. A traffic spike, a retry storm or a slow dependency can push a service there.
+
+**Fix:** Set max_count to what you are willing to pay for, alarm on running task count, and load-test one task to replace the default rps_per_task assumption with a real number.
+
+### 2. no-outbound-path (high)
 
 **Where:** network.tf (enable_nat_gateway = false by default)  
 **Impact:** not priced
@@ -98,7 +109,7 @@ Ranked by severity, then estimated monthly impact.
 
 **Fix:** Either set enable_nat_gateway = true (a NAT gateway bills per hour and per GB processed; its price is not in this forecast), add VPC endpoints for the AWS services you use, or route service-to-service calls through an internal address.
 
-### 2. interface-endpoint-fixed-cost (medium)
+### 3. interface-endpoint-fixed-cost (medium)
 
 **Where:** network.tf (aws_vpc_endpoint.interface)  
 **Impact:** about $58.40/month
@@ -107,7 +118,7 @@ Ranked by severity, then estimated monthly impact.
 
 **Fix:** Keep only the endpoints you need, run one AZ in non-production, or compare against a NAT gateway for your traffic before deciding.
 
-### 3. log-ingestion (medium)
+### 4. log-ingestion (medium)
 
 **Where:** ecs.tf (aws_cloudwatch_log_group)  
 **Impact:** about $13.64/month
@@ -116,7 +127,7 @@ Ranked by severity, then estimated monthly impact.
 
 **Fix:** Log at INFO or above in production, do not log request bodies, sample noisy lines, and keep retention short (set to 30 days here).
 
-### 4. internet-egress (medium)
+### 5. internet-egress (medium)
 
 **Where:** alb.tf / static_site.tf (every service that serves users)  
 **Impact:** about $13.14/month
@@ -125,16 +136,16 @@ Ranked by severity, then estimated monthly impact.
 
 **Fix:** Compress responses, cache at a CDN, and avoid returning large payloads by default.
 
-### 5. no-autoscaling (medium)
+### 6. alarm-subscription-unconfirmed (medium)
 
-**Where:** ecs.tf (aws_ecs_service desired_count)  
+**Where:** alarms.tf (aws_sns_topic_subscription.alerts_email)  
 **Impact:** not priced
 
-**Why it bites:** Task counts are fixed (apps-billing=2, apps-gateway=2, apps-notifier=2, apps-users=2, apps-web=2) and nothing scales them. A traffic spike can saturate the tasks, and quiet periods still pay for full capacity.
+**Why it bites:** AWS sends a confirmation e-mail to alert_email when the subscription is created. Until someone clicks the link, every alarm fires into a topic with no listeners and nobody is told that something is wrong.
 
-**Fix:** Add aws_appautoscaling_target and a target-tracking policy on CPU or request count per service, with sensible minimum and maximum counts.
+**Fix:** Apply, open the confirmation e-mail immediately, and test with `aws cloudwatch set-alarm-state` on one alarm. Consider a shared mailbox so alerts do not depend on one person.
 
-### 6. redis-replica (low)
+### 7. redis-replica (low)
 
 **Where:** elasticache.tf (num_cache_clusters)  
 **Impact:** about $14.60/month
@@ -143,7 +154,7 @@ Ranked by severity, then estimated monthly impact.
 
 **Fix:** Use one node if Redis is only a rebuildable cache; keep replicas if it is a broker or holds data you cannot lose.
 
-### 7. public-ipv4 (low)
+### 8. public-ipv4 (low)
 
 **Where:** alb.tf (aws_lb.main)  
 **Impact:** about $7.30/month
@@ -152,7 +163,7 @@ Ranked by severity, then estimated monthly impact.
 
 **Fix:** Accept it for the one shared load balancer; never add a load balancer per service.
 
-### 8. container-insights (low)
+### 9. container-insights (low)
 
 **Where:** ecs.tf (aws_ecs_cluster.main, containerInsights = enabled)  
 **Impact:** not priced
@@ -161,7 +172,7 @@ Ranked by severity, then estimated monthly impact.
 
 **Fix:** Set the setting to disabled until you need the dashboards, or budget for it.
 
-### 9. cross-az-traffic (low)
+### 10. cross-az-traffic (low)
 
 **Where:** ecs.tf / rds.tf / elasticache.tf  
 **Impact:** not priced

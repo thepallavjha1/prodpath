@@ -6,11 +6,12 @@ Traffic-driven quantities scale with the scenario factor; always-on resources do
 nothing generated here autoscales.
 """
 
+import math
 from dataclasses import dataclass, field
 
-from prodpath.forecast import UsageBook
+from prodpath.forecast import SCENARIOS, UsageBook
 from prodpath.models import Architecture, Component, CostLine, Forecast, SystemModel
-from prodpath.providers.aws.iac import AZ_COUNT, interface_endpoints
+from prodpath.providers.aws.iac import AZ_COUNT, build_alarms, interface_endpoints
 from prodpath.providers.aws.pricing import PriceBook
 
 Qty = tuple[float, float, float]  # low, expected, spike
@@ -126,29 +127,60 @@ def _web_services(costing: _Costing) -> list[_Web]:
     ]
 
 
-def _fargate(costing: _Costing) -> None:
+def _task_counts(costing: _Costing, c: Component, web: dict[str, _Web]) -> Qty:
+    """Tasks per scenario. Web services follow traffic between their autoscaling bounds; workers
+    and scheduled jobs stay at their starting count (their load is not known)."""
+    minimum = int(c.params["desired_count"])
+    scaling = next(
+        (s for s in _services(costing.arch, "autoscaling") if s.serves == c.serves), None
+    )
+    sid = c.serves[0]
+    if scaling is None or sid not in web:
+        return costing.constant(float(minimum))
+    maximum = int(scaling.params["max_count"])
+    per_task = costing.usage.get("rps_per_task", sid)
+    requests = web[sid].rps + web[sid].inbound
+    low, expected, spike = (
+        float(min(max(math.ceil(requests * costing.usage.factor(s) / per_task), minimum), maximum))
+        for s in SCENARIOS
+    )
+    return (low, expected, spike)
+
+
+def _fargate(costing: _Costing, web: list[_Web]) -> None:
     usage, hours = costing.usage, costing.hours
+    web_by_id = {w.sid: w for w in web}
     for c in sorted(_services(costing.arch, *COMPUTE_TYPES), key=lambda x: x.name):
         sid = c.serves[0]
         vcpu, memory_gb = int(c.params["cpu"]) / 1024, int(c.params["memory"]) / 1024
-        tasks = int(c.params["desired_count"])
-        active = hours
         if c.type == "scheduled-task":
             runs = usage.get("cron_runs_per_month", sid)
             active = runs * usage.get("cron_minutes_per_run", sid) / 60
+            tasks: Qty = costing.constant(float(c.params["desired_count"]))
+        else:
+            active = hours
+            tasks = _task_counts(costing, c, web_by_id)
         costing.add(
-            c.name,
-            "vCPU-hours",
-            "vCPU-h",
-            "fargate.vcpu_hour",
-            costing.constant(vcpu * tasks * active),
+            c.name, "vCPU-hours", "vCPU-h", "fargate.vcpu_hour", _times(tasks, vcpu * active)
         )
         costing.add(
-            c.name,
-            "memory GB-hours",
-            "GB-h",
-            "fargate.gb_hour",
-            costing.constant(memory_gb * tasks * active),
+            c.name, "memory GB-hours", "GB-h", "fargate.gb_hour", _times(tasks, memory_gb * active)
+        )
+
+
+def _times(quantity: Qty, factor: float) -> Qty:
+    return (quantity[0] * factor, quantity[1] * factor, quantity[2] * factor)
+
+
+def _alarms(costing: _Costing) -> None:
+    count = len(build_alarms(costing.arch))
+    if count:
+        costing.add(
+            "alarms",
+            f"{count} standard alarms",
+            "alarm-month",
+            "cloudwatch.alarm_month",
+            costing.constant(float(count)),
         )
 
 
@@ -407,7 +439,7 @@ def build_forecast(
 ) -> Forecast:
     costing = _Costing(arch, system, usage, prices)
     web = _web_services(costing)
-    _fargate(costing)
+    _fargate(costing, web)
     _load_balancer(costing, web)
     traffic_gb, constant_gb = _logs(costing, web)
     _endpoints(costing, traffic_gb, constant_gb)
@@ -415,6 +447,7 @@ def build_forecast(
     _secrets_and_registry(costing)
     _internet_egress(costing, web)
     _static_sites(costing)
+    _alarms(costing)
     for c in arch.components:
         if c.type in NOT_MODELLED:
             costing.not_priced.append(f"{c.name} ({c.type}): {NOT_MODELLED[c.type]}")

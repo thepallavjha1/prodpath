@@ -42,8 +42,8 @@ class TrapContext:
 TrapFn = Callable[[TrapContext], Trap | None]
 
 
-def _severity_by_share(share: float) -> str:
-    return "high" if share >= HIGH_SHARE else "medium" if share >= MEDIUM_SHARE else "low"
+def _severity_by_share(share: float, high: float = HIGH_SHARE, medium: float = MEDIUM_SHARE) -> str:
+    return "high" if share >= high else "medium" if share >= medium else "low"
 
 
 def trap_no_outbound_path(ctx: TrapContext) -> Trap | None:
@@ -145,19 +145,63 @@ def trap_internet_egress(ctx: TrapContext) -> Trap | None:
     )
 
 
-def trap_no_autoscaling(ctx: TrapContext) -> Trap | None:
-    web = ctx.components("ecs-service-web")
-    if not web:
+def _hours(ctx: TrapContext) -> float:
+    return next((a.value for a in ctx.forecast.assumptions if a.name == "hours_per_month"), 730.0)
+
+
+def trap_autoscaling_max_cost(ctx: TrapContext) -> Trap | None:
+    """Extra monthly spend if every scalable service ran at its maximum task count all month."""
+    extra, listed = 0.0, []
+    for scaling in ctx.components("autoscaling"):
+        sid = scaling.serves[0]
+        service = next(
+            (
+                c
+                for c in ctx.components("ecs-service-web", "ecs-service-worker")
+                if c.serves == [sid]
+            ),
+            None,
+        )
+        if service is None:
+            continue
+        vcpu_hours = int(service.params["cpu"]) / 1024 * _hours(ctx)
+        lines = [ln for ln in ctx.forecast.lines if ln.component == service.name]
+        spend = sum(ln.usd_expected for ln in lines)
+        vcpu_line = next((ln for ln in lines if ln.dimension == "vCPU-hours"), None)
+        if vcpu_line is None or not vcpu_line.qty_expected:
+            continue
+        tasks = vcpu_line.qty_expected / vcpu_hours
+        maximum = int(scaling.params["max_count"])
+        extra += max(0.0, (maximum - tasks) * spend / tasks)
+        listed.append(f"{sid} up to {maximum} tasks")
+    if not listed:
         return None
-    counts = ", ".join(f"{c.serves[0]}={c.params['desired_count']}" for c in web)
     return Trap(
-        id="no-autoscaling",
+        id="autoscaling-max-cost",
+        severity=_severity_by_share(ctx.share(extra), high=1.0, medium=HIGH_SHARE),
+        where="autoscaling.tf (var.service_scaling max_count)",
+        why=f"Services scale out on CPU ({'; '.join(listed)}). Held at those maximums all month "
+        f"they would cost about ${extra:,.2f} more than the expected forecast. A traffic spike, "
+        "a retry storm or a slow dependency can push a service there.",
+        fix="Set max_count to what you are willing to pay for, alarm on running task count, and "
+        "load-test one task to replace the default rps_per_task assumption with a real number.",
+        est_monthly_usd_impact=round(extra, 2),
+    )
+
+
+def trap_alarm_subscription(ctx: TrapContext) -> Trap | None:
+    if not ctx.components("alarms"):
+        return None
+    return Trap(
+        id="alarm-subscription-unconfirmed",
         severity="medium",
-        where="ecs.tf (aws_ecs_service desired_count)",
-        why=f"Task counts are fixed ({counts}) and nothing scales them. A traffic spike can "
-        "saturate the tasks, and quiet periods still pay for full capacity.",
-        fix="Add aws_appautoscaling_target and a target-tracking policy on CPU or request count "
-        "per service, with sensible minimum and maximum counts.",
+        where="alarms.tf (aws_sns_topic_subscription.alerts_email)",
+        why="AWS sends a confirmation e-mail to alert_email when the subscription is created. "
+        "Until someone clicks the link, every alarm fires into a topic with no listeners and "
+        "nobody is told that something is wrong.",
+        fix="Apply, open the confirmation e-mail immediately, and test with "
+        "`aws cloudwatch set-alarm-state` on one alarm. Consider a shared mailbox so alerts do "
+        "not depend on one person.",
         est_monthly_usd_impact=None,
     )
 
@@ -287,7 +331,8 @@ def trap_spa_fallback(ctx: TrapContext) -> Trap | None:
 
 TRAPS: list[TrapFn] = [
     trap_no_outbound_path, trap_interface_endpoints, trap_log_ingestion, trap_public_ipv4,
-    trap_internet_egress, trap_no_autoscaling, trap_redis_replica, trap_multi_az_nonprod,
+    trap_internet_egress, trap_autoscaling_max_cost, trap_alarm_subscription,
+    trap_redis_replica, trap_multi_az_nonprod,
     trap_container_insights, trap_cross_az, trap_cloudfront_certificate, trap_spa_fallback,
 ]  # fmt: skip
 
