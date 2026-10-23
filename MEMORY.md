@@ -15,12 +15,11 @@ Keep it short, factual and current. History goes in the changelog; design lives 
 
 ## Current state
 
-- Phase: **8 (autoscaling and alarms) implemented.** Next in the approved plan (ADR-017): Phase 9 medium-traffic defaults, 10 calibration tooling (blocked on bills), 11 hardening + `prodpath run`. The user still has not run the pipeline on the real monorepo.
-- Works: per-service CPU target-tracking autoscaling (`var.service_scaling`, min = current count, max = 5x, services ignore `desired_count`), one alerts SNS topic + `alert_email` variable, 10 to 24 CloudWatch alarms per system defined once as data (`build_alarms` in `providers/aws/iac.py`, used by both `alarms.tf` and the cost model), forecast tasks follow traffic (`clamp(ceil(rps/rps_per_task), min, max)`, `rps_per_task` default 25, per-service override), alarms priced from `CW:AlarmMonitorUsage`, traps `autoscaling-max-cost` and `alarm-subscription-unconfirmed` (replacing `no-autoscaling`), a real alerts step. 339 fast tests + 9 `-m tf` tests (real terraform validate), ruff, mypy --strict green.
-- Real-price forecast (ap-south-1, prod, defaults): mono_a $215, mono_b ~$196, mono_c $426, mono_d $277 per month. With 20 req/s *average* and 25 KB responses on every service, mono_d is $1,328 expected and $5,735 at 5x spike (egress dominates), so Phase 9 must settle whether the user's "tens of req/s" means average or peak.
-- Demo: `.\scripts\demo.ps1` (fixture, no LLM, ~15 s; `-Summarize` ~2 min) or `uv run prodpath run --path <repo> [--summarize] [--usage usage.toml]`; guide in `docs/DEMO.md`. `prodpath run` was pulled forward from Phase 11 (it also leaves inventory.json and system.json).
+- Phases 0 to 8 built, plus part of Phase 11: `prodpath run`, `docs/DEMO.md`, `scripts/demo.ps1`, a plain-language README, and fixes from the first real-repo run. Remaining in the approved plan (ADR-017): Phase 9 medium-traffic defaults + `--write-usage-template`, Phase 10 calibration (blocked on real AWS bills), rest of Phase 11 (more real-repo fixes, performance).
+- First real repo run (user's `Portfolio_GRPO_Indian_Tickers`, a Streamlit app + ML scripts): it was classified `unknown` before; now a `web` service on ECS + ALB with sticky sessions, assumed port 8501, outbound-path trap (yfinance), heavy-ML warning (torch). Forecast about $134 (nonprod) to $178 (prod) per month, mostly fixed costs. Not yet run on the user's real monorepo.
+- Works: `scan`, `facts`, `summarize`, `plan` (PLAN.md + validated Terraform), `forecast` (FORECAST.md), `run`, `prices update`, `doctor`; friendly errors for URL/missing `--path` and missing usage file. 382 fast tests + 10 `-m tf` tests (real terraform validate), ruff, mypy --strict green.
 - Code is at https://github.com/thepallavjha1/prodpath (public, main). Commit and push after each task.
-- Next action: user says "go" for Phase 9 (first answering average vs peak traffic) and runs the pipeline on the real monorepo.
+- Next action: the user runs `uv run prodpath run --path <real monorepo> --summarize` and reports misses; answers (a) is "tens of req/s" an average or a peak, (b) whether to build a "budget mode" for small apps (no ALB/endpoints, one task), (c) the acceptable cold-run time and region. Then Phase 9.
 
 ## Decisions (short form; details in docs/DECISIONS.md)
 
