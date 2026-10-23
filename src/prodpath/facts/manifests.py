@@ -36,6 +36,18 @@ KNOWN_PACKAGES: dict[str, tuple[FactKind, str]] = {
     "vitepress": ("framework", "vitepress"),
     "vuepress": ("framework", "vuepress"),
     "@sveltejs/adapter-static": ("framework", "sveltekit-static"),
+    # Python UI frameworks that serve themselves (session-based: see providers/aws/rules.py)
+    "streamlit": ("framework", "streamlit"),
+    "gradio": ("framework", "gradio"),
+    "dash": ("framework", "dash"),
+    "chainlit": ("framework", "chainlit"),
+    "nicegui": ("framework", "nicegui"),
+    # Libraries that fetch data over the internet at runtime: tasks need an outbound path.
+    "yfinance": ("external_call", "http-client"),
+    "aiohttp": ("external_call", "http-client"),
+    # Heavy ML frameworks: multi-GB images and a lot of memory.
+    "torch": ("dependency", "torch"),
+    "tensorflow": ("dependency", "tensorflow"),
     "gunicorn": ("runtime", "gunicorn"),
     "uvicorn": ("runtime", "uvicorn"),
     "psycopg2": ("datastore", "postgres"),

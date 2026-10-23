@@ -31,6 +31,8 @@ uv run prodpath prices update --region ap-south-1     # once: the only networked
 uv run prodpath run --path C:\path\to\your\repo --summarize --usage usage.toml
 ```
 
+Run commands from the `prodpath` folder (or use `uv run --project <prodpath folder> prodpath ...` from elsewhere). `--path` must be a local folder: clone a GitHub repo first, then pass the clone.
+
 Output lands in `.prodpath/out/` inside the repo you analysed (git-ignore it): `PLAN.md`, `FORECAST.md` and `terraform/`. Stage outputs (`inventory.json`, `system.json`, `summaries.json`, `architecture.json`, `forecast.json`) sit in `.prodpath/`.
 
 Individual stages: `scan`, `facts`, `summarize`, `plan`, `forecast`, `prices update`, `doctor`. See `docs/DEMO.md` for a guided walkthrough, how to test it, and the known limits.

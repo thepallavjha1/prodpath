@@ -315,3 +315,20 @@ def test_alarm_coverage_follows_what_was_planned() -> None:
 def test_rds_storage_alarm_threshold_is_twenty_percent_of_the_allocation() -> None:
     text = render_iac(arch_for(kitchen_sink_system()))["alarms.tf"]
     assert str(int(20 * 1024**3 * 0.2)) in text  # 20 GB allocated
+
+
+def test_session_based_services_get_a_stickiness_block_on_their_target_group() -> None:
+    facts = [make_fact("framework", "streamlit"), make_fact("datastore", "postgres")]
+    system = SystemModel(services=[make_service("ui", "web", facts)])
+    alb = render_iac(arch_for(system))["alb.tf"]
+    assert 'type            = "lb_cookie"' in alb.replace("  ", " ") or "lb_cookie" in alb
+    assert "stickiness" in alb
+    plain = SystemModel(
+        services=[
+            make_service(
+                "api", "web", [make_fact("port", "8000"), make_fact("datastore", "postgres")]
+            )
+        ]
+    )
+    assert "stickiness" not in render_iac(arch_for(plain))["alb.tf"]
+    assert "containerPort = 8501" in render_iac(arch_for(system))["ecs.tf"].replace("  ", " ")

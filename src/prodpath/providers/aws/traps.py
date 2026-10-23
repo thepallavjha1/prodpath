@@ -329,11 +329,58 @@ def trap_spa_fallback(ctx: TrapContext) -> Trap | None:
     )
 
 
+def trap_stateful_sessions(ctx: TrapContext) -> Trap | None:
+    sticky = [c.serves[0] for c in ctx.components("ecs-service-web") if "sticky:true" in c.items]
+    if not sticky:
+        return None
+    return Trap(
+        id="stateful-sessions",
+        severity="medium",
+        where="alb.tf (aws_lb_target_group stickiness), autoscaling.tf",
+        why=f"{', '.join(sticky)} keep each visitor's session inside one task (Streamlit, Gradio "
+        "and similar). Sticky sessions are enabled, but a task restart, a deployment or "
+        "autoscaling scale-in ends the sessions on that task, and one busy session cannot be "
+        "spread across tasks.",
+        fix="Keep the minimum task count at 2 or more, raise the scale-in cooldown, deploy "
+        "outside busy hours, and keep state you cannot lose in a database, not in the session.",
+        est_monthly_usd_impact=None,
+    )
+
+
+def trap_heavy_ml_image(ctx: TrapContext) -> Trap | None:
+    heavy = {}
+    for service in ctx.system.services:
+        found = sorted(
+            {f.value for f in service.facts if f.kind == "dependency"} & {"torch", "tensorflow"}
+        )
+        if found and any(
+            c.serves == [service.id]
+            for c in ctx.components("ecs-service-web", "ecs-service-worker")
+        ):
+            heavy[service.id] = found
+    if not heavy:
+        return None
+    listing = "; ".join(f"{sid} ({', '.join(libs)})" for sid, libs in sorted(heavy.items()))
+    return Trap(
+        id="heavy-ml-image",
+        severity="medium",
+        where="ecr.tf, ecs.tf (task size)",
+        why=f"{listing} pull in a machine-learning framework: the container image is several GB, "
+        "slow to build, push and start, and uses a lot of memory per task. Fargate has no GPU, "
+        "so heavy inference or any training would be slow or not possible there.",
+        fix="Use CPU-only wheels and a slim base image, load the model once at start-up, run "
+        "training or batch scoring outside this service, and measure real memory before keeping "
+        "the default 1 vCPU / 4 GB size.",
+        est_monthly_usd_impact=None,
+    )
+
+
 TRAPS: list[TrapFn] = [
     trap_no_outbound_path, trap_interface_endpoints, trap_log_ingestion, trap_public_ipv4,
     trap_internet_egress, trap_autoscaling_max_cost, trap_alarm_subscription,
     trap_redis_replica, trap_multi_az_nonprod,
     trap_container_insights, trap_cross_az, trap_cloudfront_certificate, trap_spa_fallback,
+    trap_stateful_sessions, trap_heavy_ml_image,
 ]  # fmt: skip
 
 

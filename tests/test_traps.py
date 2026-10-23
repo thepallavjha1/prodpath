@@ -220,7 +220,7 @@ def test_traps_are_ranked_by_severity_then_impact() -> None:
 
 
 def test_the_registry_has_one_function_per_seeded_trap() -> None:
-    assert len(TRAPS) == 13
+    assert len(TRAPS) == 15
     assert find_traps.__name__ == "find_traps" and TrapContext.__name__ == "TrapContext"
 
 
@@ -247,3 +247,24 @@ def test_internet_egress_trap_counts_cloudfront_traffic_too() -> None:
     traps, _ = traps_for([svc("web", "static", SITE)])
     assert traps["internet-egress"].est_monthly_usd_impact == pytest.approx(2.63, abs=0.005)
     assert "no-autoscaling" not in traps and "interface-endpoint-fixed-cost" not in traps
+
+
+def test_stateful_session_trap_fires_for_streamlit_style_apps_only() -> None:
+    ui = svc("ui", "web", [f("framework", "streamlit"), f("datastore", "postgres")])
+    traps, _ = traps_for([ui])
+    trap = traps["stateful-sessions"]
+    assert trap.severity == "medium" and "ui" in trap.why and "sticky" in trap.why.lower()
+    plain, _ = traps_for(DB_APP)
+    assert "stateful-sessions" not in plain
+
+
+def test_heavy_ml_image_trap_fires_when_torch_or_tensorflow_is_used() -> None:
+    ml = svc(
+        "ui",
+        "web",
+        [f("framework", "streamlit"), f("dependency", "torch"), f("datastore", "postgres")],
+    )
+    traps, _ = traps_for([ml])
+    assert "torch" in traps["heavy-ml-image"].why and "GPU" in traps["heavy-ml-image"].why
+    plain, _ = traps_for(DB_APP)
+    assert "heavy-ml-image" not in plain

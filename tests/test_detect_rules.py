@@ -149,3 +149,31 @@ def test_static_detection_records_the_matching_line_as_evidence(tmp_path: Path) 
     evidence = services[0].evidence[0]
     assert evidence.path == "frontend/package.json" and "vite" in evidence.snippet
     assert services[0].certainty == "heuristic"
+
+
+STREAMLIT_APP = (
+    "import streamlit as st\n\nst.set_page_config(layout='wide')\nst.title('Simulator')\n"
+)
+
+
+def test_a_streamlit_app_is_a_web_service(tmp_path: Path) -> None:
+    files = {
+        "simulator/app.py": STREAMLIT_APP,
+        "simulator/requirements.txt": "pandas\nstreamlit\ntorch\n",
+        "train.py": "import torch\n",
+    }
+    assert detect(tmp_path, files) == {"simulator": "web"}  # the training script is not a service
+
+
+def test_other_python_ui_frameworks_are_web_services_too(tmp_path: Path) -> None:
+    files = {
+        "demo/app.py": "import gradio as gr\ngr.Interface(lambda x: x, 'text', 'text').launch()\n",
+        "dash_app/app.py": "from dash import Dash\napp = Dash(__name__)\n",
+        "bot/app.py": "import chainlit as cl\n",
+    }
+    assert detect(tmp_path, files) == {"bot": "web", "dash_app": "web", "demo": "web"}
+
+
+def test_streamlit_app_py_is_also_recognised_by_its_conventional_name(tmp_path: Path) -> None:
+    files = {"ui/streamlit_app.py": STREAMLIT_APP}
+    assert detect(tmp_path, files) == {"ui": "web"}

@@ -90,6 +90,7 @@ def _service_context(arch: Architecture, c: Component) -> dict[str, Any]:
         "port_assumed": kind == "web" and port is None,
         "health": _item(c, "health") or "/",
         "health_assumed": kind == "web" and _item(c, "health") is None,
+        "sticky": "sticky:true" in c.items,
         "tg_prefix": (re.sub(r"[^a-z0-9]", "", sid.lower())[:5].ljust(5, "x") + "-"),
         "cpu": int(c.params["cpu"]),
         "memory": int(c.params["memory"]),

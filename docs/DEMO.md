@@ -6,6 +6,14 @@ How to see prodpath work in about five minutes, and how to test it. Commands are
 
 Run it against a repo. It reads the code (never your cloud account, never secret values), finds the deployable services, and writes a production plan for AWS, ready-to-review Terraform, and a monthly cost range with the traps most likely to bite you. Everything is deterministic and evidence-backed (`path:line`) except the optional local-LLM summaries.
 
+## Two rules that avoid the most common errors
+
+1. **Run commands from the `prodpath` folder**, or point at it from anywhere:
+   `uv run --project C:\Users\Asus\OneDrive\Desktop\Agentic_Cloud\prodpath prodpath <command>`.
+   From any other folder, `uv run prodpath` fails with `program not found`.
+2. **`--path` must be a local folder, not a URL.** prodpath never downloads code. Clone first:
+   `git clone https://github.com/<you>/<repo>` then `--path C:\path\to\<repo>`.
+
 ## One-time setup
 
 ```powershell

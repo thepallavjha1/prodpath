@@ -90,6 +90,15 @@ resource "aws_lb_target_group" "{{ s.tf }}" {
     path    = "{{ s.health }}"
     matcher = "200-399"
   }
+{% if s.sticky %}
+
+  # Each visitor's session lives in one task, so keep a visitor on the same task.
+  stickiness {
+    type            = "lb_cookie"
+    cookie_duration = 86400
+    enabled         = true
+  }
+{% endif %}
 
   lifecycle {
     create_before_destroy = true

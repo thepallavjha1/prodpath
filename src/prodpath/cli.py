@@ -35,6 +35,24 @@ from prodpath.summarize import summarize_system
 OUTPUT_DIR = ".prodpath"
 
 
+GIT_URL_PREFIXES = ("http://", "https://", "git@", "ssh://", "git://")
+
+
+def repo_path(value: str) -> Path:
+    """A local folder. prodpath reads files from disk and never downloads code."""
+    if value.lower().startswith(GIT_URL_PREFIXES):
+        raise argparse.ArgumentTypeError(
+            f"--path must be a local folder, not a URL ({value}). prodpath never downloads code: "
+            "clone the repo first, for example `git clone <url>`, then pass the cloned folder."
+        )
+    path = Path(value)
+    if not path.exists():
+        raise argparse.ArgumentTypeError(f"folder does not exist: {value}")
+    if not path.is_dir():
+        raise argparse.ArgumentTypeError(f"not a folder: {value}")
+    return path
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="prodpath",
@@ -46,16 +64,18 @@ def build_parser() -> argparse.ArgumentParser:
     doctor = sub.add_parser("doctor", help="check Ollama, model, GPU/VRAM, terraform")
     doctor.add_argument("--model", default=DEFAULT_MODEL, help="Ollama model tag to check")
     scan = sub.add_parser("scan", help="scan the repo and list detected services")
-    scan.add_argument("--path", type=Path, default=Path("."), help="repo to scan (default: .)")
+    scan.add_argument("--path", type=repo_path, default=Path("."), help="repo to scan (default: .)")
     facts = sub.add_parser("facts", help="extract evidence-backed facts per service")
-    facts.add_argument("--path", type=Path, default=Path("."), help="repo to analyze (default: .)")
+    facts.add_argument(
+        "--path", type=repo_path, default=Path("."), help="repo to analyze (default: .)"
+    )
     facts.add_argument("--service", help="only show this service id")
     summarize = sub.add_parser("summarize", help="local-LLM summaries (needs Ollama running)")
-    summarize.add_argument("--path", type=Path, default=Path("."), help="repo (default: .)")
+    summarize.add_argument("--path", type=repo_path, default=Path("."), help="repo (default: .)")
     summarize.add_argument("--model", default=DEFAULT_MODEL, help="Ollama model tag")
     summarize.add_argument("--num-ctx", type=int, default=DEFAULT_NUM_CTX, help="context window")
     plan = sub.add_parser("plan", help="write PLAN.md (needs no LLM)")
-    plan.add_argument("--path", type=Path, default=Path("."), help="repo (default: .)")
+    plan.add_argument("--path", type=repo_path, default=Path("."), help="repo (default: .)")
     plan.add_argument("--provider", default="aws", choices=["aws"], help="target cloud")
     plan.add_argument("--region", default=Prefs().region, help="cloud region")
     plan.add_argument("--env", default="prod", choices=["prod", "nonprod"], help="environment")
@@ -63,7 +83,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--tf-mirror", type=Path, default=DEFAULT_MIRROR, help="local Terraform provider mirror"
     )
     forecast = sub.add_parser("forecast", help="write FORECAST.md: monthly cost range and traps")
-    forecast.add_argument("--path", type=Path, default=Path("."), help="repo (default: .)")
+    forecast.add_argument("--path", type=repo_path, default=Path("."), help="repo (default: .)")
     forecast.add_argument("--provider", default="aws", choices=["aws"], help="target cloud")
     forecast.add_argument("--region", default=Prefs().region, help="cloud region")
     forecast.add_argument("--env", default="prod", choices=["prod", "nonprod"], help="environment")
@@ -74,7 +94,7 @@ def build_parser() -> argparse.ArgumentParser:
     run = sub.add_parser(
         "run", help="everything: (summaries,) plan + Terraform, forecast (needs a price snapshot)"
     )
-    run.add_argument("--path", type=Path, default=Path("."), help="repo (default: .)")
+    run.add_argument("--path", type=repo_path, default=Path("."), help="repo (default: .)")
     run.add_argument("--provider", default="aws", choices=["aws"], help="target cloud")
     run.add_argument("--region", default=Prefs().region, help="cloud region")
     run.add_argument("--env", default="prod", choices=["prod", "nonprod"], help="environment")
@@ -342,6 +362,9 @@ def run_all(
 ) -> int:
     """Everything in order: (summaries,) plan with Terraform, then the forecast."""
     repo = repo.resolve()
+    if usage_path is not None and not usage_path.is_file():
+        print(f"error: usage file not found: {usage_path}", file=sys.stderr)
+        return 1
     if not snapshot_path(price_dir, prefs.region).is_file():
         # Fail before any work: the forecast is the last stage and needs this file.
         print(

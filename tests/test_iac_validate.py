@@ -57,3 +57,22 @@ def test_a_static_only_system_validates(tmp_path: Path) -> None:
     files = format_files(provider.render_iac(provider.choose(system, Prefs())), TERRAFORM)
     result = validate_files(files, TERRAFORM, DEFAULT_MIRROR, tmp_path)
     assert (result.status, result.detail) == ("ok", "configuration is valid")
+
+
+def test_a_streamlit_service_with_stickiness_validates(tmp_path: Path) -> None:
+    from prodpath.models import SystemModel
+    from tests.helpers import make_fact, make_service
+
+    assert TERRAFORM
+    provider = AwsProvider()
+    facts = [
+        make_fact("framework", "streamlit"),
+        make_fact("dependency", "torch"),
+        make_fact("external_call", "http-client"),
+    ]
+    system = SystemModel(services=[make_service("ui", "web", facts)])
+    arch = provider.choose(system, Prefs())
+    files = format_files(provider.render_iac(arch), TERRAFORM)
+    assert "stickiness" in files["alb.tf"]
+    result = validate_files(files, TERRAFORM, DEFAULT_MIRROR, tmp_path)
+    assert (result.status, result.detail) == ("ok", "configuration is valid")

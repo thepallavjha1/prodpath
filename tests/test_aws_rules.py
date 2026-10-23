@@ -222,3 +222,56 @@ def test_a_lone_app_runner_service_has_no_ecs_autoscaling_or_alarms() -> None:
     arch = choose([svc("site", "web", WEB)])
     assert "apprunner" in types(arch)
     assert not types(arch) & {"autoscaling", "alarms", "sns-alerts"}
+
+
+def test_framework_default_port_and_health_path_fill_in_when_the_code_has_none() -> None:
+    arch = choose([svc("ui", "web", [f("framework", "streamlit"), f("datastore", "postgres")])])
+    component = by_name(arch, "ecs-svc-ui")
+    assert "port:8501" in component.items and "health:/_stcore/health" in component.items
+    assert any("8501" in u and "streamlit" in u and "default" in u for u in arch.unknowns)
+    assert not any("no listening port" in u for u in arch.unknowns)
+
+
+def test_an_explicit_port_beats_the_framework_default() -> None:
+    facts = [f("framework", "streamlit"), f("port", "9000"), f("datastore", "postgres")]
+    component = by_name(choose([svc("ui", "web", facts)]), "ecs-svc-ui")
+    assert "port:9000" in component.items and "port:8501" not in component.items
+
+
+def test_session_based_frameworks_get_sticky_sessions_and_stateless_ones_do_not() -> None:
+    sticky = choose([svc("ui", "web", [f("framework", "streamlit"), f("datastore", "postgres")])])
+    assert "sticky:true" in by_name(sticky, "ecs-svc-ui").items
+    plain = choose([svc("api", "web", [*WEB, f("datastore", "postgres")])])
+    assert "sticky:true" not in by_name(plain, "ecs-svc-api").items
+
+
+def test_a_heavy_ml_dependency_raises_the_task_size_and_says_why() -> None:
+    facts = [f("framework", "streamlit"), f("dependency", "torch"), f("datastore", "postgres")]
+    arch = choose([svc("ui", "web", facts)])
+    params = by_name(arch, "ecs-svc-ui").params
+    assert (params["cpu"], params["memory"]) == ("1024", "4096")
+    assert any("torch" in u and "image" in u for u in arch.unknowns)
+    light = choose([svc("api", "web", [*WEB, f("datastore", "postgres")])])
+    assert by_name(light, "ecs-svc-api").params["memory"] == "1024"
+
+
+def test_websocket_frameworks_never_go_to_app_runner() -> None:
+    """Streamlit and similar need WebSockets, which App Runner does not support."""
+    for framework in ("streamlit", "gradio", "chainlit", "nicegui"):
+        arch = choose([svc("ui", "web", [f("framework", framework)])])
+        assert "apprunner" not in types(arch), framework
+        assert {"ecs-service-web", "alb", "vpc"} <= types(arch), framework
+        assert "sticky:true" in by_name(arch, "ecs-svc-ui").items
+    dash = choose([svc("ui", "web", [f("framework", "dash")])])
+    assert "apprunner" in types(dash)  # Dash is request/response: App Runner is fine
+
+
+def test_the_visible_sizing_and_reason_match_what_the_rules_decided() -> None:
+    facts = [f("framework", "streamlit"), f("dependency", "torch"), f("datastore", "postgres")]
+    component = by_name(choose([svc("ui", "web", facts)]), "ecs-svc-ui")
+    assert "1 vCPU / 4 GB" in component.sizing and "2 tasks" in component.sizing
+    assert "torch" in component.sizing  # says why it is bigger than the default
+    assert "sticky" in component.reason.lower() and "session" in component.reason.lower()
+    assert "stateless" not in component.reason.lower()
+    plain = by_name(choose([svc("api", "web", [*WEB, f("datastore", "postgres")])]), "ecs-svc-api")
+    assert "0.5 vCPU / 1 GB" in plain.sizing and "stateless" in plain.reason.lower()

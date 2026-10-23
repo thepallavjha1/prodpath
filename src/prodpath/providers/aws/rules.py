@@ -73,7 +73,10 @@ def _uses_app_runner(ctx: Context) -> bool:
     if len(ctx.deployable) != 1 or ctx.deployable[0].kind != "web":
         return False
     needs_vpc = {"datastore", "cache", "queue"}
-    return not any(f.kind in needs_vpc for f in ctx.deployable[0].facts)
+    if any(f.kind in needs_vpc for f in ctx.deployable[0].facts):
+        return False
+    # Streamlit, Gradio and similar run over WebSockets, which App Runner does not support.
+    return not any(f.value in SESSION_FRAMEWORKS for f in _facts(ctx.deployable[0], "framework"))
 
 
 ANCHOR_KINDS = ("port", "framework", "worker", "schedule", "runtime", "health_endpoint")
@@ -136,12 +139,45 @@ def rule_foundation(ctx: Context) -> list[Component]:
     ]
 
 
+# Self-serving Python UI frameworks: default port and health path. They are not in the code,
+# so they are flagged as assumptions. These frameworks keep each visitor's session in one
+# process, which is why they also need sticky sessions behind a load balancer.
+FRAMEWORK_DEFAULTS = {
+    "streamlit": (8501, "/_stcore/health"),
+    "gradio": (7860, "/"),
+    "dash": (8050, "/"),
+    "chainlit": (8000, "/"),
+    "nicegui": (8080, "/"),
+}
+SESSION_FRAMEWORKS = {"streamlit", "gradio", "chainlit", "nicegui"}
+HEAVY_ML = {"torch", "tensorflow"}
+
+
+def _framework(service: Service) -> str | None:
+    names = {f.value for f in _facts(service, "framework")}
+    return next((n for n in FRAMEWORK_DEFAULTS if n in names), None)
+
+
 def _port_items(service: Service, ctx: Context) -> list[str]:
     ports = sorted({f.value for f in _facts(service, "port")}, key=int)
     items = [f"port:{ports[0]}"] if ports else []
-    if not ports and service.kind == "web":
+    health = [f.value for f in _facts(service, "health_endpoint")][:1]
+    framework = _framework(service)
+    if not ports and framework and service.kind == "web":
+        port, default_health = FRAMEWORK_DEFAULTS[framework]
+        items = [f"port:{port}"]
+        health = health or [default_health]
+        ctx.unknowns.append(
+            f"{service.id}: no port found in the code; assumed {framework}'s default {port} "
+            f"and health path {health[0]}. Make the container listen there."
+        )
+    elif not ports and service.kind == "web":
         ctx.unknowns.append(f"{service.id}: no listening port found; set the container port.")
-    items += [f"health:{f.value}" for f in _facts(service, "health_endpoint")][:1]
+    items += [f"health:{h}" for h in health]
+    if service.kind == "web" and any(
+        f.value in SESSION_FRAMEWORKS for f in _facts(service, "framework")
+    ):
+        items.append("sticky:true")
     return items
 
 
@@ -262,6 +298,11 @@ def rule_compute(ctx: Context) -> list[Component]:
                 f"{service.id}: the schedule was not extracted; set the cron expression yourself."
             )
         comp.items = items
+        if "sticky:true" in items and comp.type == "ecs-service-web":
+            comp.reason = (
+                "HTTP container behind the shared load balancer with sticky sessions: this "
+                "framework keeps each visitor's session inside one task."
+            )
         components.append(comp)
         components.append(
             _component(
@@ -531,6 +572,23 @@ def _fill_params(ctx: Context, components: list[Component]) -> None:
                 "memory": "1024" if web else "512",
                 "desired_count": "1" if c.type == "scheduled-task" else desired,
             }
+            heavy = {f.value for f in _facts(by_id[c.serves[0]], "dependency")} & HEAVY_ML
+            if heavy and c.type != "scheduled-task":
+                # Fargate 1 vCPU allows 2 to 8 GB; ML libraries need room to load models.
+                c.params["cpu"], c.params["memory"] = "1024", "4096"
+                tasks = (
+                    "1 task"
+                    if c.params["desired_count"] == "1"
+                    else f"{c.params['desired_count']} tasks"
+                )
+                c.sizing = (
+                    f"Fargate 1 vCPU / 4 GB, {tasks} (sized up for {', '.join(sorted(heavy))})"
+                )
+                ctx.unknowns.append(
+                    f"{c.serves[0]}: uses {', '.join(sorted(heavy))}; the container image will be "
+                    "several GB and the task is sized at 1 vCPU / 4 GB. Fargate has no GPU, so "
+                    "training or fast inference needs another service."
+                )
             names = {f.value for f in _facts(by_id[c.serves[0]], "env_var")}
             c.items += [f"env:{n}" for n in sorted(names) if not SECRET_NAME.search(n)]
         elif c.type == "rds":

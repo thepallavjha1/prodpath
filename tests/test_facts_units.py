@@ -180,3 +180,23 @@ def test_each_static_site_generator_is_named() -> None:
             "package.json", f'{{"devDependencies": {{"{package}": "1"}}}}'
         )
         assert ("framework", value) in pairs(facts), package
+
+
+def test_python_ui_frameworks_and_outbound_libraries_are_classified() -> None:
+    source = "import streamlit as st\nimport yfinance as yf\nimport torch\nimport pandas\n"
+    facts = pairs(python_facts.extract("app.py", source))
+    assert ("framework", "streamlit") in facts
+    assert ("external_call", "http-client") in facts  # yfinance downloads market data over HTTP
+    assert ("dependency", "torch") in facts  # a heavy ML framework: image size and memory matter
+    assert not any(value == "pandas" for _, value in facts)
+
+
+def test_requirements_list_the_same_things() -> None:
+    facts = manifests.extract_requirements(
+        "requirements.txt", "pandas\nyfinance\nmatplotlib\nstreamlit\ntorch\n"
+    )
+    assert pairs(facts) == {
+        ("external_call", "http-client"),
+        ("framework", "streamlit"),
+        ("dependency", "torch"),
+    }

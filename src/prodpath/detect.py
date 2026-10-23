@@ -22,7 +22,7 @@ Kind = Literal["web", "worker", "cron", "static", "lib", "unknown"]
 Certainty = Literal["parsed", "heuristic"]
 
 MAX_READ_BYTES = 1024 * 1024
-ENTRYPOINT_FILES = {"main.py", "app.py", "server.js", "main.go"}
+ENTRYPOINT_FILES = {"main.py", "app.py", "streamlit_app.py", "server.js", "main.go"}
 SERVER_MARKERS = (
     ".listen(",
     "app.run(",
@@ -31,6 +31,16 @@ SERVER_MARKERS = (
     "FastAPI(",
     "ListenAndServe",
     "createServer",
+    # Python UI frameworks that serve themselves (default ports in providers/aws/rules.py)
+    "import streamlit",
+    "from streamlit",
+    "import gradio",
+    "from gradio",
+    "import dash",
+    "from dash",
+    "import chainlit",
+    "from nicegui",
+    "import nicegui",
 )
 DEPENDENCY_MANIFESTS = {
     "package.json",
