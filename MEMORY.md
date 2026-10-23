@@ -18,6 +18,7 @@ Keep it short, factual and current. History goes in the changelog; design lives 
 - Phase: **8 (autoscaling and alarms) implemented.** Next in the approved plan (ADR-017): Phase 9 medium-traffic defaults, 10 calibration tooling (blocked on bills), 11 hardening + `prodpath run`. The user still has not run the pipeline on the real monorepo.
 - Works: per-service CPU target-tracking autoscaling (`var.service_scaling`, min = current count, max = 5x, services ignore `desired_count`), one alerts SNS topic + `alert_email` variable, 10 to 24 CloudWatch alarms per system defined once as data (`build_alarms` in `providers/aws/iac.py`, used by both `alarms.tf` and the cost model), forecast tasks follow traffic (`clamp(ceil(rps/rps_per_task), min, max)`, `rps_per_task` default 25, per-service override), alarms priced from `CW:AlarmMonitorUsage`, traps `autoscaling-max-cost` and `alarm-subscription-unconfirmed` (replacing `no-autoscaling`), a real alerts step. 339 fast tests + 9 `-m tf` tests (real terraform validate), ruff, mypy --strict green.
 - Real-price forecast (ap-south-1, prod, defaults): mono_a $215, mono_b ~$196, mono_c $426, mono_d $277 per month. With 20 req/s *average* and 25 KB responses on every service, mono_d is $1,328 expected and $5,735 at 5x spike (egress dominates), so Phase 9 must settle whether the user's "tens of req/s" means average or peak.
+- Demo: `.\scripts\demo.ps1` (fixture, no LLM, ~15 s; `-Summarize` ~2 min) or `uv run prodpath run --path <repo> [--summarize] [--usage usage.toml]`; guide in `docs/DEMO.md`. `prodpath run` was pulled forward from Phase 11 (it also leaves inventory.json and system.json).
 - Code is at https://github.com/thepallavjha1/prodpath (public, main). Commit and push after each task.
 - Next action: user says "go" for Phase 9 (first answering average vs peak traffic) and runs the pipeline on the real monorepo.
 
@@ -78,10 +79,12 @@ Keep it short, factual and current. History goes in the changelog; design lives 
 - Autoscaling is CPU-only (no request-count or queue-depth scaling); workers stay at their minimum in the forecast because their load is unknown. `rps_per_task` (25) is a placeholder: load-test one task to replace it.
 - In shell heredocs, `
 ` inside Python strings and mixed quotes keep getting mangled; write patch scripts and templates with the Write tool and run them as files.
+- phi3 summaries are shallow and sometimes wrong (for example "Next.js is not production-ready"); citations are valid but the content is low-trust. The plan labels model risks as model-written; the deterministic plan and forecast do not depend on them. A larger model or better prompts would be the fix if summaries matter.
 - Build backend is hatchling (needed so `prodpath` is installable as a console script).
 
 ## Changelog
 
+- 2026-10-23 | phase-11 (partial) | Added `prodpath run`, docs/DEMO.md, scripts/demo.ps1, README quickstart fix | User asked how to demo and test; README referenced a command that did not exist | src/prodpath/cli.py, tests/test_run.py, docs/DEMO.md, scripts/demo.ps1, README.md
 - 2026-10-22 | phase-8 | Autoscaling + alarms in Terraform, build_alarms shared with the cost model, traffic-driven task counts and rps_per_task, alarm pricing, two traps, real alerts step (ADR-018) | Phase 8 roadmap | src/prodpath/providers/aws/*, src/prodpath/forecast.py, tests/*, docs/*
 - 2026-10-22 | phase-7 | Static site detection, rule_static, static_site.tf, frontend step, CloudFront pricing (global offer), two traps, fixture mono_d, ROADMAP re-plan (ADR-017) | Phase 7 roadmap | src/prodpath/{detect,facts/manifests,forecast,render}.py, src/prodpath/providers/aws/*, tests/*, docs/*
 - 2026-10-21 | phase-6 | Added forecast.py, providers/aws/{pricing,costs,traps}.py, render_forecast, `prices update` and `forecast` commands, Forecast model, usage.toml, 10 traps, committed TEST-ONLY price snapshot, hand-computed forecast tests (ADR-016) | Phase 6 roadmap | src/prodpath/*, tests/*, docs/*

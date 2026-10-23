@@ -127,7 +127,7 @@ Do not start the next phase "while you're here". If a task belongs to a later ph
 
 **Goal:** make it correct on the user's actual monorepo.
 
-- [ ] `prodpath run` (scan, facts, optional summaries, plan, forecast in one command)
+- [x] `prodpath run` (scan, facts, optional summaries, plan, forecast in one command), pulled forward for the demo; `docs/DEMO.md` and `scripts/demo.ps1` added
 - [ ] Fix every miss from the first real run, each with a minimal fixture and a test
 - [ ] Performance pass on the monorepo; error messages pass; README quickstart verified from a clean clone
 

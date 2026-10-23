@@ -21,7 +21,13 @@ from prodpath.llm import (
 )
 from prodpath.models import Inventory, Prefs, ServiceCandidate, Summaries, SystemModel
 from prodpath.providers import get_provider
-from prodpath.providers.aws.pricing import DEFAULT_PRICE_DIR, PriceBook, PriceError, update_prices
+from prodpath.providers.aws.pricing import (
+    DEFAULT_PRICE_DIR,
+    PriceBook,
+    PriceError,
+    snapshot_path,
+    update_prices,
+)
 from prodpath.render import render_forecast, render_plan
 from prodpath.scan import scan_repo
 from prodpath.summarize import summarize_system
@@ -65,6 +71,19 @@ def build_parser() -> argparse.ArgumentParser:
     forecast.add_argument(
         "--prices-dir", type=Path, default=DEFAULT_PRICE_DIR, help="price snapshots"
     )
+    run = sub.add_parser(
+        "run", help="everything: (summaries,) plan + Terraform, forecast (needs a price snapshot)"
+    )
+    run.add_argument("--path", type=Path, default=Path("."), help="repo (default: .)")
+    run.add_argument("--provider", default="aws", choices=["aws"], help="target cloud")
+    run.add_argument("--region", default=Prefs().region, help="cloud region")
+    run.add_argument("--env", default="prod", choices=["prod", "nonprod"], help="environment")
+    run.add_argument("--usage", type=Path, help="usage.toml with your real numbers")
+    run.add_argument("--prices-dir", type=Path, default=DEFAULT_PRICE_DIR, help="price snapshots")
+    run.add_argument("--tf-mirror", type=Path, default=DEFAULT_MIRROR, help="provider mirror")
+    run.add_argument("--summarize", action="store_true", help="add local-LLM summaries (Ollama)")
+    run.add_argument("--model", default=DEFAULT_MODEL, help="Ollama model tag for --summarize")
+    run.add_argument("--num-ctx", type=int, default=DEFAULT_NUM_CTX, help="context window")
     prices = sub.add_parser("prices", help="manage the local price snapshot")
     prices_sub = prices.add_subparsers(dest="prices_command", required=True)
     update = prices_sub.add_parser("update", help="download the public AWS Price List (networked)")
@@ -296,6 +315,55 @@ def run_forecast(repo: Path, prefs: Prefs, usage_path: Path | None, price_dir: P
     return 0
 
 
+def _write_stage_outputs(repo: Path) -> int:
+    """Leave inventory.json and system.json for inspection; return the service count."""
+    out_dir = repo / OUTPUT_DIR
+    cache = HashCache(out_dir / "cache.sqlite")
+    try:
+        inventory, _ = scan_repo(repo, cache)  # a cache hit after the earlier stages: instant
+        candidates = detect_services(repo, inventory)
+        system, _ = extract_system(repo, inventory, candidates, cache)
+    finally:
+        cache.close()
+    write_inventory(out_dir / "inventory.json", inventory)
+    (out_dir / "system.json").write_text(system.model_dump_json(indent=2) + "\n", encoding="utf-8")
+    return len(candidates)
+
+
+def run_all(
+    repo: Path,
+    prefs: Prefs,
+    usage_path: Path | None,
+    price_dir: Path,
+    mirror: Path,
+    summarize: bool,
+    model: str,
+    num_ctx: int,
+) -> int:
+    """Everything in order: (summaries,) plan with Terraform, then the forecast."""
+    repo = repo.resolve()
+    if not snapshot_path(price_dir, prefs.region).is_file():
+        # Fail before any work: the forecast is the last stage and needs this file.
+        print(
+            f"error: no price snapshot for {prefs.region} in {price_dir}. Run "
+            f"`prodpath prices update --region {prefs.region}` once (the only networked command).",
+            file=sys.stderr,
+        )
+        return 1
+    if summarize and run_summarize(repo, model, num_ctx) != 0:
+        return 1  # run_summarize already printed why; do not present a half-finished result
+    if (code := run_plan(repo, prefs, mirror)) != 0:
+        return code
+    if (code := run_forecast(repo, prefs, usage_path, price_dir)) != 0:
+        return code
+    out = repo / OUTPUT_DIR / "out"
+    print(f"\n{_write_stage_outputs(repo)} services detected. Read these next:")
+    print(f"  {out / 'PLAN.md'}")
+    print(f"  {out / 'FORECAST.md'}")
+    print(f"  {out / 'terraform'}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.WARNING)
@@ -306,6 +374,18 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "plan":
         prefs = Prefs(provider=args.provider, region=args.region, environment=args.env)
         return run_plan(args.path, prefs, args.tf_mirror)
+    if args.command == "run":
+        prefs = Prefs(provider=args.provider, region=args.region, environment=args.env)
+        return run_all(
+            args.path,
+            prefs,
+            args.usage,
+            args.prices_dir,
+            args.tf_mirror,
+            args.summarize,
+            args.model,
+            args.num_ctx,
+        )
     if args.command == "prices":
         return run_prices_update(args.region, args.dest)
     if args.command == "forecast":

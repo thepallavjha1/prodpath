@@ -17,19 +17,23 @@ Run it inside a repo and get:
 
 ## Status
 
-Phases 0 to 8 built (scan, facts, local-LLM summaries, AWS plan, Terraform, cost forecast and traps, frontend hosting, autoscaling and alarms). See `MEMORY.md` for the current state and `docs/ROADMAP.md` for the plan.
+Phases 0 to 8 built (scan, facts, local-LLM summaries, AWS plan, Terraform, cost forecast and traps, frontend hosting, autoscaling and alarms), plus `prodpath run`. Proven on four synthetic monorepos; not yet run on a real one. See `MEMORY.md` for the current state and `docs/ROADMAP.md` for the plan.
 
-## Quickstart (once Phase 0 is done)
+## Quickstart
 
-```bash
+```powershell
 uv sync
-ollama pull <model>          # see docs/ARCHITECTURE.md section 14 for suggested sizes
-uv run prodpath doctor       # checks Ollama, model, GPU/VRAM
-cd /path/to/your/repo
-uv run --project /path/to/prodpath prodpath run
+uv run prodpath doctor                                # Ollama, model, GPU fit, terraform, provider mirror
+uv run prodpath prices update --region ap-south-1     # once: the only networked command (public AWS Price List)
+.\scripts\demo.ps1                                    # one-command demo on a fixture (add -Summarize for the local LLM)
+
+# on your own repo:
+uv run prodpath run --path C:\path\to\your\repo --summarize --usage usage.toml
 ```
 
-Output lands in `.prodpath/out/` inside your repo (git-ignore it).
+Output lands in `.prodpath/out/` inside the repo you analysed (git-ignore it): `PLAN.md`, `FORECAST.md` and `terraform/`. Stage outputs (`inventory.json`, `system.json`, `summaries.json`, `architecture.json`, `forecast.json`) sit in `.prodpath/`.
+
+Individual stages: `scan`, `facts`, `summarize`, `plan`, `forecast`, `prices update`, `doctor`. See `docs/DEMO.md` for a guided walkthrough, how to test it, and the known limits.
 
 ## Docs
 
@@ -39,6 +43,7 @@ Output lands in `.prodpath/out/` inside your repo (git-ignore it).
 | `MEMORY.md` | Living project memory: state, decisions, changelog, open questions |
 | `docs/ARCHITECTURE.md` | Source of truth for design |
 | `docs/ROADMAP.md` | Phases with exit criteria |
+| `docs/DEMO.md` | How to demo and test it |
 | `docs/DECISIONS.md` | Architecture decision records |
 | `docs/CODING_STANDARDS.md` | Minimal, readable code rules and definition of done |
 | `docs/TESTING.md` | Test strategy, fixtures, invariants |
