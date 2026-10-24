@@ -140,6 +140,15 @@ def build_parser() -> argparse.ArgumentParser:
         "--dataset", type=Path, default=DEFAULT_CALIBRATION_DATASET,
         help="local file that collects every calibration run",
     )  # fmt: skip
+    serve = sub.add_parser("serve", help="web UI: paste a public GitHub link, get the analysis")
+    serve.add_argument("--host", default="127.0.0.1", help="address to listen on")
+    serve.add_argument("--port", type=int, default=8765, help="port (default 8765)")
+    serve.add_argument("--prices-dir", type=Path, default=DEFAULT_PRICE_DIR, help="price snapshots")
+    serve.add_argument("--tf-mirror", type=Path, default=DEFAULT_MIRROR, help="provider mirror")
+    serve.add_argument(
+        "--allow-public", action="store_true",
+        help="listen on a non-local address (only behind a TLS and login proxy)",
+    )  # fmt: skip
     prices = sub.add_parser("prices", help="manage the local price snapshot")
     prices_sub = prices.add_subparsers(dest="prices_command", required=True)
     update = prices_sub.add_parser("update", help="download the public AWS Price List (networked)")
@@ -400,6 +409,29 @@ def run_calibrate(repo: Path, csv_path: Path, months: float, dataset: Path) -> i
     return 0
 
 
+def run_serve(host: str, port: int, price_dir: Path, mirror: Path, allow_public: bool) -> int:
+    from prodpath.web.jobs import JobManager
+    from prodpath.web.server import SAMPLE_DIR, make_server
+
+    manager = JobManager(price_dir, mirror, sample_dir=SAMPLE_DIR)
+    try:
+        server = make_server(manager, host, port, allow_public)
+    except (ValueError, OSError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 1
+    print(f"prodpath web UI on http://{host}:{port}  (Ctrl+C to stop)")
+    if not any(price_dir.glob("*.json")):
+        print("note: no price snapshot yet; run `prodpath prices update` first", file=sys.stderr)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("stopping")
+    finally:
+        server.server_close()
+        manager.shutdown()
+    return 0
+
+
 def _write_stage_outputs(repo: Path) -> int:
     """Leave inventory.json and system.json for inspection; return the service count."""
     out_dir = repo / OUTPUT_DIR
@@ -487,6 +519,8 @@ def main(argv: list[str] | None = None) -> int:
             args.model,
             args.num_ctx,
         )
+    if args.command == "serve":
+        return run_serve(args.host, args.port, args.prices_dir, args.tf_mirror, args.allow_public)
     if args.command == "calibrate":
         return run_calibrate(args.path, args.csv, args.months, args.dataset)
     if args.command == "prices":

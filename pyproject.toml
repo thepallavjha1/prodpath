@@ -34,6 +34,7 @@ packages = ["src/prodpath"]
 [tool.ruff]
 line-length = 100
 src = ["src", "tests"]
+extend-exclude = ["src/prodpath/web/sample"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP"]
@@ -41,6 +42,7 @@ select = ["E", "F", "I", "B", "UP"]
 [tool.mypy]
 strict = true
 files = ["src"]
+exclude = ["src/prodpath/web/sample/"]  # demo project that is analysed, never imported
 plugins = ["pydantic.mypy"]
 
 [tool.pytest.ini_options]

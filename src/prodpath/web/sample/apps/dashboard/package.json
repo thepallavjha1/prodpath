@@ -1,0 +1,5 @@
+{
+  "name": "dashboard",
+  "scripts": {"build": "next build", "start": "next start"},
+  "dependencies": {"next": "^14", "react": "^18"}
+}
