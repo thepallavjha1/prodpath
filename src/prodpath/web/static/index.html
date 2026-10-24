@@ -1,1 +1,99 @@
-<!doctype html><html><body></body></html>
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>prodpath - production plan and cost forecast</title>
+  <meta name="description" content="Paste a public GitHub repository and get an AWS production plan, Terraform and a monthly cost forecast with risks.">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="#" id="brand">
+      <svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><use href="#i-logo"></use></svg>
+      <span>prodpath</span>
+    </a>
+    <span class="tag">read-only analysis, nothing runs</span>
+    <button class="icon-btn" id="theme" type="button" aria-label="Switch light or dark theme" title="Theme"></button>
+  </header>
+
+  <main id="app">
+    <section id="view-home" class="view">
+      <div class="hero">
+        <p class="eyebrow">From repo to production, with a price tag</p>
+        <h1>Paste a public GitHub repo.<br><span class="grad">Get the AWS plan, Terraform and what it will cost.</span></h1>
+        <p class="lead">prodpath reads your code like a careful engineer: services, ports, databases, queues, env var names. Then it proposes an architecture, writes validated Terraform and forecasts the monthly bill, including the traps that quietly inflate it.</p>
+        <form id="form" class="search" autocomplete="off">
+          <label class="sr" for="url">Public GitHub repository link</label>
+          <input id="url" name="url" type="url" inputmode="url" spellcheck="false" placeholder="https://github.com/owner/repository" required>
+          <button class="primary" type="submit" id="go">Analyze</button>
+        </form>
+        <div class="chips" id="examples"></div>
+        <details class="options">
+          <summary>Options</summary>
+          <div class="opt-grid">
+            <label>Environment
+              <select id="opt-env"><option value="prod">Production (Multi-AZ, 2 tasks)</option><option value="nonprod">Non-production (single AZ)</option></select>
+            </label>
+            <label>Peak requests per second
+              <input id="opt-peak" type="number" min="0.1" step="any" value="20">
+            </label>
+            <label class="check"><input id="opt-budget" type="checkbox"> Budget network <small>(no VPC endpoints, tasks get public IPs)</small></label>
+            <label class="check"><input id="opt-validate" type="checkbox"> Run terraform validate <small>(slower)</small></label>
+          </div>
+        </details>
+        <p class="error" id="home-error" role="alert" hidden></p>
+      </div>
+      <div class="how">
+        <article><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-search"></use></svg><h3>1. It reads</h3><p>Shallow, read-only clone. Python and JavaScript are parsed, Dockerfiles and manifests read. Secrets are never opened, only variable names.</p></article>
+        <article><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-cloud"></use></svg><h3>2. It plans</h3><p>Rules, not guesses: ECS Fargate behind one load balancer, databases, caches, queues, with a reason and evidence for every piece.</p></article>
+        <article><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-coin"></use></svg><h3>3. It prices</h3><p>Real AWS list prices produce a low, expected and spike month, plus ranked traps that show what can bite you.</p></article>
+      </div>
+    </section>
+
+    <section id="view-progress" class="view" hidden>
+      <div class="panel">
+        <h2 id="progress-title">Analyzing</h2>
+        <ol class="stepper" id="stepper"></ol>
+        <pre class="terminal" id="log" aria-live="polite"></pre>
+        <p class="error" id="progress-error" role="alert" hidden></p>
+        <button class="ghost" type="button" id="back" hidden>Try another repository</button>
+      </div>
+    </section>
+
+    <section id="view-result" class="view" hidden>
+      <div class="result-head">
+        <div>
+          <p class="eyebrow" id="r-kicker"></p>
+          <h2 id="r-title"></h2>
+          <p class="muted" id="r-sub"></p>
+        </div>
+        <div class="actions">
+          <a class="ghost btn" id="r-zip" href="#" download>Download plan + Terraform</a>
+          <button class="ghost" type="button" id="r-new">New analysis</button>
+        </div>
+      </div>
+      <div class="kpis" id="kpis"></div>
+      <nav class="tabs" id="tabs" role="tablist" aria-label="Result sections"></nav>
+      <div id="tab-body" class="tab-body" role="tabpanel"></div>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <p>Code is read, never executed, and the clone is deleted after the analysis. Prices come from the public AWS Price List. Figures are estimates, not a quote.</p>
+  </footer>
+
+  <svg width="0" height="0" class="defs" aria-hidden="true">
+    <defs>
+      <symbol id="i-logo" viewBox="0 0 32 32"><rect x="2" y="2" width="28" height="28" rx="8" fill="none" stroke="currentColor" stroke-width="2.2"/><path d="M9 21l5-5 3 3 6-8" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="23" cy="11" r="2" fill="currentColor"/></symbol>
+      <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M16 16l5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+      <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M7 18a4 4 0 010-8 5.5 5.5 0 0110.6 1.2A3.4 3.4 0 0117 18z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></symbol>
+      <symbol id="i-coin" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M14.5 9.2c-.6-.8-1.5-1.2-2.5-1.2-1.4 0-2.4.7-2.4 1.8 0 2.4 5 1.2 5 3.6 0 1.1-1 1.8-2.6 1.8-1.1 0-2.1-.5-2.7-1.3M12 6.5v1.5M12 16v1.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+      <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+      <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8.5 8.5 0 019.5 4a8.5 8.5 0 1010.5 10.5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></symbol>
+    </defs>
+  </svg>
+  <script src="/app.js" defer></script>
+</body>
+</html>

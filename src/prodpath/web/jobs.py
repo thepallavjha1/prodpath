@@ -164,6 +164,14 @@ def recompute(
     run: Run, prefs: Prefs, usage_values: dict[str, float], price_dir: Path, mirror: Path
 ) -> Run:
     """What-if: new traffic or budget choices on the stored system, without re-cloning."""
+    if prefs == run.prefs:  # traffic only: the architecture and Terraform cannot change
+        provider = get_provider(prefs.provider, price_dir)
+        forecast = provider.forecast(run.arch, run.system, usage_from_values(usage_values))
+        traps = provider.traps(run.arch, run.system, forecast)
+        return replace(
+            run, usage_values=usage_values, forecast=forecast, traps=traps,
+            forecast_md=render_forecast(run.arch, forecast, traps, _stamp()),
+        )  # fmt: skip
     with tempfile.TemporaryDirectory(prefix="prodpath-whatif-") as tmp:
         updated = build_run(
             run.system, run.source, prefs, usage_values, price_dir, mirror, Path(tmp), False
