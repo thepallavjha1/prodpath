@@ -440,6 +440,8 @@ Developer machine: ASUS TUF F15 with an NVIDIA GeForce GTX 1650, **4 GB VRAM** (
 
 API: `POST /api/analyze` (url + options) returns a job id; `GET /api/jobs/<id>` (stage, log, status); `GET /api/runs/<id>` (the result bundle); `POST /api/runs/<id>/forecast` (what-if usage and budget recomputed from the stored system, no re-clone); `GET /api/runs/<id>/download.zip` (PLAN.md, FORECAST.md, terraform/); `POST /api/prices/update` (explicit, networked). A built-in sample (the bundled `mono_d` fixture) runs without any network.
 
+Web mode does not run the local-LLM summaries (a shared server should not own an Ollama model); the plan is rule-based. The what-if endpoint reuses the stored system model and, when only traffic changes, also the stored architecture and Terraform. Budget mode (ADR-021) is `Prefs.budget`: the vpc component records `params.mode`, templates and the cost model branch on it.
+
 ## 15. Extension points
 
 - New cloud: implement `Provider` in `providers/<name>/`, register it in `providers/__init__.py`.

@@ -199,3 +199,4 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 .tf > div { min-width: 0; }
 .refcell { display: inline-block; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
 td code { overflow-wrap: anywhere; }
+.notice { border-left: 4px solid var(--warn); }

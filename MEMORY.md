@@ -15,11 +15,12 @@ Keep it short, factual and current. History goes in the changelog; design lives 
 
 ## Current state
 
-- Phases 0 to 8 built, plus part of Phase 11: `prodpath run`, `docs/DEMO.md`, `scripts/demo.ps1`, a plain-language README, and fixes from the first real-repo run. Remaining in the approved plan (ADR-017): Phase 9 medium-traffic defaults + `--write-usage-template`, Phase 10 calibration (blocked on real AWS bills), rest of Phase 11 (more real-repo fixes, performance).
-- First real repo run (user's `Portfolio_GRPO_Indian_Tickers`, a Streamlit app + ML scripts): it was classified `unknown` before; now a `web` service on ECS + ALB with sticky sessions, assumed port 8501, outbound-path trap (yfinance), heavy-ML warning (torch). Forecast about $134 (nonprod) to $178 (prod) per month, mostly fixed costs. Not yet run on the user's real monorepo.
-- Works: `scan`, `facts`, `summarize`, `plan` (PLAN.md + validated Terraform), `forecast` (FORECAST.md), `run`, `prices update`, `doctor`; friendly errors for URL/missing `--path` and missing usage file. 382 fast tests + 10 `-m tf` tests (real terraform validate), ruff, mypy --strict green.
-- Code is at https://github.com/thepallavjha1/prodpath (public, main). Commit and push after each task.
-- Next action: the user runs `uv run prodpath run --path <real monorepo> --summarize` and reports misses; answers (a) is "tens of req/s" an average or a peak, (b) whether to build a "budget mode" for small apps (no ALB/endpoints, one task), (c) the acceptable cold-run time and region. Then Phase 9.
+- Branch `feature/web-ui` (pushed for testing; **not merged to `main`** until the user approves). It adds: symlink safety, Phase 9 (peak versus average traffic, `--write-usage-template`), budget mode (`--budget`), Phase 10 (`prodpath calibrate costs.csv`, synthetic tests only), and the **web UI** (`prodpath serve`, default http://127.0.0.1:8765): paste a public GitHub link, or use the built-in sample, and get services, architecture, cost (donut, what-if sliders), risks, plan steps, Terraform and facts, with a zip download.
+- Web mode: stdlib `http.server`, no new dependency; strict CSP; GitHub-only URL allow-list; hardened shallow clone deleted after analysis; 2 concurrent jobs, per-IP rate limit, 1 h retention; summaries (Ollama) are not run in web mode. Verified against real GitHub clones (`thepallavjha1/Portfolio_GRPO_Indian_Tickers`: 1 web service, about $199/month; `pallets/flask`: only libraries, shows a "nothing deployable" notice) and through headless Chrome (CDP smoke test: sample flow, what-if, tabs, step ticks, bad-link error, no console errors).
+- Works on `main` as before: `scan`, `facts`, `summarize`, `plan`, `forecast`, `run`, `prices update`, `doctor`.
+- Tests: 467 fast tests pass; ruff and mypy --strict green. The real `terraform validate` test for budget-mode output (`-m tf`, `tests/test_iac_check.py`) has not been run yet: the machine ran low on memory and Claude Code stopped it. Run `uv run pytest -m tf` when memory is free.
+- Accuracy is still unmeasured: no real AWS bill exists. Terraform has never been applied.
+- Next action: the user tests the web UI (`uv run prodpath serve`), reports what is wrong, then we merge to `main`. Public hosting needs a TLS and login proxy in front (not built).
 
 ## Decisions (short form; details in docs/DECISIONS.md)
 
@@ -84,6 +85,8 @@ Keep it short, factual and current. History goes in the changelog; design lives 
 - Build backend is hatchling (needed so `prodpath` is installable as a console script).
 
 ## Changelog
+
+2026-10-25 | phase-12 | Web UI + `prodpath serve`, calibrate command, budget mode, peak/average traffic, symlink safety | user asked for a link-driven UI on a separate branch; all on `feature/web-ui` | src/prodpath/web/*, calibrate.py, cli.py, forecast.py, providers/aws/*, docs
 
 - 2026-10-23 | phase-11 (partial) | First real-repo run (user's Streamlit portfolio simulator): added Streamlit/Gradio/Dash/Chainlit/NiceGUI detection, framework default ports and health paths, sticky sessions, WebSocket frameworks excluded from App Runner, yfinance/aiohttp as outbound calls, torch/tensorflow sizing, traps stateful-sessions and heavy-ml-image; friendly errors for URL/missing `--path` and missing usage file | Real run found the app unclassified (`unknown`, no facts) | src/prodpath/{cli,detect,facts/manifests}.py, src/prodpath/providers/aws/*, tests/*
 - 2026-10-23 | phase-11 (partial) | Added `prodpath run`, docs/DEMO.md, scripts/demo.ps1, README quickstart fix | User asked how to demo and test; README referenced a command that did not exist | src/prodpath/cli.py, tests/test_run.py, docs/DEMO.md, scripts/demo.ps1, README.md

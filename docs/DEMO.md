@@ -60,6 +60,13 @@ Copy-Item tests\fixtures\mono_d $demo -Recurse
 
 Also look at `.prodpath\out\terraform\`: `ecs.tf`, `alb.tf`, `static_site.tf`, `autoscaling.tf`, `alarms.tf`, a `terraform.tfvars.example` with every `<PLACEHOLDER>` you must fill, and a `README.md`.
 
+## The web demo
+
+1. `uv run prodpath serve`, then open http://127.0.0.1:8765.
+2. Click **Try the built-in sample** (works offline). Walk the tabs: Overview (service map), Architecture (reason and evidence per piece), Cost (donut; drag the peak-traffic slider; tick Budget network and watch the total drop), Risks, Plan (tick steps, copy commands), Terraform, Facts.
+3. Paste a real link such as `https://github.com/thepallavjha1/Portfolio_GRPO_Indian_Tickers` (needs internet; takes about 10 seconds).
+4. Click **Download plan + Terraform** for the zip.
+
 ## Prove the guarantees
 
 - **Read-only on your repo**: in a git repo, `git status` after a run shows only `.prodpath/` as new.

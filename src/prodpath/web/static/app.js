@@ -216,6 +216,10 @@ const INFRA_KINDS = { datastore: 'db', cache: 'cache', queue: 'queue', object_st
 function tabOverview() {
   const b = state.bundle;
   const wrap = h('div');
+  if (!b.summary.components) {
+    wrap.append(h('div', { cls: 'card notice' }, h('h3', { text: 'Nothing deployable was found' }),
+      h('p', { text: 'prodpath found no web service, worker, scheduled job or static site to run in production. Libraries and tooling repositories are not deployed, so there is no AWS plan or cost to show. Try a repository with a Dockerfile, a web framework app or a static site.' })));
+  }
   wrap.append(h('div', { cls: 'card' }, h('h3', { text: 'How the pieces connect' }), h('div', { cls: 'map-wrap' }, serviceMap(b)), mapLegend()));
   wrap.append(h('div', { cls: 'card' }, h('h3', { text: 'Services found' }),
     h('div', { cls: 'scroll' }, h('table', null,

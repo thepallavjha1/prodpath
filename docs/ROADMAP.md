@@ -133,6 +133,12 @@ Do not start the next phase "while you're here". If a task belongs to a later ph
 
 **Exit:** the user confirms services, facts, plan, Terraform and forecast on the real repo.
 
+## Phase 12 - Web UI (branch `feature/web-ui`)
+Goal: anyone pastes a public GitHub link and gets the analysis in a browser (ADR-019).
+- Done: `prodpath serve`, GitHub intake and hardened clone, job queue, JSON bundle, single-page UI (map, architecture, cost with what-if, risks, plan, Terraform, facts), zip download, built-in sample.
+- Tests: URL allow-list, clone flags, limits, rate limit, retention, what-if, real HTTP server, CSP and no-inline-code guard.
+- Not done: public hosting (needs TLS + login proxy), LLM summaries in web mode, accounts or saved history.
+
 ## Parking lot (not scheduled)
 
 Second cloud provider (was Phase 8; implement the `Provider` protocol in `providers/gcp/` and fix any leak into stages 1 to 4), Monte Carlo ranges, Pulumi/CDK renderers, GitHub App wrapper, MCP server wrapper, optional sandbox-account dry run, live-account drift detection.

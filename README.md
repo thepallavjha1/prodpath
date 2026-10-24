@@ -54,6 +54,17 @@ If you want summaries: install Ollama, then run `ollama pull phi3`.
 
 This copies a built-in sample project to a temporary folder, analyses it, and shows you where the results are. It takes about 15 seconds and does not change your files. Add `-Summarize` to also use the local AI (about 2 minutes), or `-Open` to open the results when done.
 
+## The web page (paste a GitHub link)
+
+```powershell
+uv run prodpath prices update --region ap-south-1   # one time
+uv run prodpath serve
+```
+
+Open http://127.0.0.1:8765 in your browser. Paste the link of a **public** GitHub repository (or click "Try the built-in sample") and press Analyze. After a short wait you get the services it found, the AWS design with a reason for each piece, a cost forecast you can play with (traffic sliders, budget network switch), the risks that could surprise you, the step-by-step plan, the Terraform files and a zip to download.
+
+Things to know: it only accepts `https://github.com/owner/repo` links, the code is read and never run, the copy is deleted when it finishes, and results disappear after an hour. It listens on your own computer only. Putting it on the internet needs a login and HTTPS in front of it (see `docs/SECURITY.md`).
+
 ## Run it on your own project
 
 **Step 1.** Get the project onto your computer as a normal folder. For a GitHub repo, clone it:
