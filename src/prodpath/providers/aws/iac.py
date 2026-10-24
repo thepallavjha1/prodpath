@@ -308,6 +308,9 @@ def build_context(arch: Architecture) -> dict[str, Any]:
         "web_services": [s for s in services if s["kind"] == "web"],
         "cron_services": [s for s in services if s["kind"] == "cron"],
         "has_vpc": "vpc" in types,
+        "budget": any(
+            c.type == "vpc" and c.params.get("mode") == "budget" for c in arch.components
+        ),
         "has_cluster": "ecs-cluster" in types,
         "has_alb": "alb" in types,
         "has_secrets": any(s["secrets"] for s in services),

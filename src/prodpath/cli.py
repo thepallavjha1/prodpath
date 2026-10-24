@@ -80,6 +80,10 @@ def build_parser() -> argparse.ArgumentParser:
     plan.add_argument("--region", default=Prefs().region, help="cloud region")
     plan.add_argument("--env", default="prod", choices=["prod", "nonprod"], help="environment")
     plan.add_argument(
+        "--budget", action="store_true",
+        help="lean network: no VPC endpoints or NAT, tasks get public IPs",
+    )  # fmt: skip
+    plan.add_argument(
         "--tf-mirror", type=Path, default=DEFAULT_MIRROR, help="local Terraform provider mirror"
     )
     forecast = sub.add_parser("forecast", help="write FORECAST.md: monthly cost range and traps")
@@ -87,6 +91,10 @@ def build_parser() -> argparse.ArgumentParser:
     forecast.add_argument("--provider", default="aws", choices=["aws"], help="target cloud")
     forecast.add_argument("--region", default=Prefs().region, help="cloud region")
     forecast.add_argument("--env", default="prod", choices=["prod", "nonprod"], help="environment")
+    forecast.add_argument(
+        "--budget", action="store_true",
+        help="lean network: no VPC endpoints or NAT, tasks get public IPs",
+    )  # fmt: skip
     forecast.add_argument("--usage", type=Path, help="usage.toml with your real numbers")
     forecast.add_argument(
         "--write-usage-template", type=Path, metavar="FILE",
@@ -103,6 +111,10 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--provider", default="aws", choices=["aws"], help="target cloud")
     run.add_argument("--region", default=Prefs().region, help="cloud region")
     run.add_argument("--env", default="prod", choices=["prod", "nonprod"], help="environment")
+    run.add_argument(
+        "--budget", action="store_true",
+        help="lean network: no VPC endpoints or NAT, tasks get public IPs",
+    )  # fmt: skip
     run.add_argument("--usage", type=Path, help="usage.toml with your real numbers")
     run.add_argument("--prices-dir", type=Path, default=DEFAULT_PRICE_DIR, help="price snapshots")
     run.add_argument("--tf-mirror", type=Path, default=DEFAULT_MIRROR, help="provider mirror")
@@ -409,10 +421,14 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "facts":
         return run_facts(args.path, args.service)
     if args.command == "plan":
-        prefs = Prefs(provider=args.provider, region=args.region, environment=args.env)
+        prefs = Prefs(
+            provider=args.provider, region=args.region, environment=args.env, budget=args.budget
+        )
         return run_plan(args.path, prefs, args.tf_mirror)
     if args.command == "run":
-        prefs = Prefs(provider=args.provider, region=args.region, environment=args.env)
+        prefs = Prefs(
+            provider=args.provider, region=args.region, environment=args.env, budget=args.budget
+        )
         return run_all(
             args.path,
             prefs,
@@ -428,7 +444,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "forecast" and args.write_usage_template is not None:
         return write_usage_template(args.write_usage_template, args.force)
     if args.command == "forecast":
-        prefs = Prefs(provider=args.provider, region=args.region, environment=args.env)
+        prefs = Prefs(
+            provider=args.provider, region=args.region, environment=args.env, budget=args.budget
+        )
         return run_forecast(args.path, prefs, args.usage, args.prices_dir)
     if args.command == "summarize":
         return run_summarize(args.path, args.model, args.num_ctx)

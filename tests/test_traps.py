@@ -222,7 +222,7 @@ def test_traps_are_ranked_by_severity_then_impact() -> None:
 
 
 def test_the_registry_has_one_function_per_seeded_trap() -> None:
-    assert len(TRAPS) == 15
+    assert len(TRAPS) == 16
     assert find_traps.__name__ == "find_traps" and TrapContext.__name__ == "TrapContext"
 
 
@@ -270,3 +270,32 @@ def test_heavy_ml_image_trap_fires_when_torch_or_tensorflow_is_used() -> None:
     assert "torch" in traps["heavy-ml-image"].why and "GPU" in traps["heavy-ml-image"].why
     plain, _ = traps_for(DB_APP)
     assert "heavy-ml-image" not in plain
+
+
+def budget_traps(services, env="prod"):  # type: ignore[no-untyped-def]
+    provider = AwsProvider(PRICES)
+    system = SystemModel(services=services)
+    arch = provider.choose(system, Prefs(environment=env, budget=True))  # type: ignore[arg-type]
+    forecast = provider.forecast(arch, system, UsageBook(ONE_RPS))
+    return {t.id: t for t in provider.traps(arch, system, forecast)}
+
+
+def test_budget_mode_has_no_endpoint_trap_and_no_outbound_trap() -> None:
+    caller = svc(
+        "api", "web", [*WEB, f("datastore", "postgres"), f("external_call", "http-client")]
+    )
+    traps = budget_traps([caller])
+    assert "interface-endpoint-fixed-cost" not in traps
+    assert "no-outbound-path" not in traps  # tasks have public IPs: outbound works
+    standard, _ = traps_for([caller])
+    assert "no-outbound-path" in standard
+
+
+def test_budget_mode_says_plainly_that_tasks_have_public_addresses() -> None:
+    """2 tasks x 730 h x 0.005 = 7.30 a month for the addresses."""
+    traps = budget_traps(DB_APP)
+    trap = traps["public-task-addresses"]
+    assert trap.est_monthly_usd_impact == pytest.approx(7.30)
+    assert trap.severity == "medium" and "api" in trap.why and "security group" in trap.why
+    standard, _ = traps_for(DB_APP)
+    assert "public-task-addresses" not in standard

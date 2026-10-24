@@ -147,8 +147,13 @@ def _task_counts(costing: _Costing, c: Component, web: dict[str, _Web]) -> Qty:
     return (low, expected, spike)
 
 
+def _budget(arch: Architecture) -> bool:
+    return any(c.type == "vpc" and c.params.get("mode") == "budget" for c in arch.components)
+
+
 def _fargate(costing: _Costing, web: list[_Web]) -> None:
     usage, hours = costing.usage, costing.hours
+    address_hours: Qty = (0.0, 0.0, 0.0)
     web_by_id = {w.sid: w for w in web}
     for c in sorted(_services(costing.arch, *COMPUTE_TYPES), key=lambda x: x.name):
         sid = c.serves[0]
@@ -166,6 +171,19 @@ def _fargate(costing: _Costing, web: list[_Web]) -> None:
         costing.add(
             c.name, "memory GB-hours", "GB-h", "fargate.gb_hour", _times(tasks, memory_gb * active)
         )
+        address_hours = _plus(address_hours, _times(tasks, active))
+    if _budget(costing.arch):  # budget mode: every running task holds a public IPv4 address
+        costing.add(
+            "task-public-ips",
+            "public IPv4 addresses (one per running task)",
+            "address-h",
+            "vpc.public_ipv4_hour",
+            address_hours,
+        )
+
+
+def _plus(a: Qty, b: Qty) -> Qty:
+    return (a[0] + b[0], a[1] + b[1], a[2] + b[2])
 
 
 def _times(quantity: Qty, factor: float) -> Qty:
@@ -231,7 +249,7 @@ def _logs(costing: _Costing, web: list[_Web]) -> tuple[float, float]:
 
 
 def _endpoints(costing: _Costing, traffic_gb: float, constant_gb: float) -> None:
-    if not _services(costing.arch, "vpc"):
+    if not _services(costing.arch, "vpc") or _budget(costing.arch):
         return
     has_secrets = bool(_services(costing.arch, "secrets"))
     count = len(interface_endpoints(has_secrets))

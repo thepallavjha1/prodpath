@@ -420,3 +420,44 @@ def test_a_higher_peak_scales_capacity_at_the_peak_not_the_monthly_volume(
     forecast = forecast_for(system, UsageBook({"peak_requests_per_second": 200.0}))
     vcpu = line(forecast, "ecs-svc-root", "vCPU")
     assert (vcpu.usd_expected, vcpu.usd_spike) == pytest.approx((29.20, 116.80))
+
+
+def budget_forecast(system, usage=None):  # type: ignore[no-untyped-def]
+    provider = AwsProvider(PRICES)
+    arch = provider.choose(system, Prefs(budget=True))
+    return provider.forecast(arch, system, usage or UsageBook(ONE_RPS)), arch
+
+
+def test_budget_mode_matches_the_hand_computed_forecast(fixtures_dir: Path, tmp_path: Path) -> None:
+    """mono_a (2 tasks) with average 1 req/s. Against the standard figures 196.3012 constants:
+    remove the interface endpoints (4 x 2 AZ x 730 h x 0.01 = 58.40) and their data
+    (5.256 GB x 0.01 = 0.05256 expected, 0.01314 low, 0.2628 spike), add one public IPv4 per
+    running task (2 tasks x 730 h x 0.005 = 7.30).
+    Expected 204.05944 - 58.40 - 0.05256 + 7.30 = 152.90688
+    Low      198.24076 - 58.40 - 0.01314 + 7.30 = 147.12762
+    Spike    235.0924  - 58.40 - 0.2628  + 7.30 = 183.7296
+    """
+    forecast, _ = budget_forecast(build_system(fixtures_dir / "mono_a", tmp_path))
+    assert forecast.total_low == pytest.approx(147.12762, **APPROX)
+    assert forecast.total_expected == pytest.approx(152.90688, **APPROX)
+    assert forecast.total_spike == pytest.approx(183.7296, **APPROX)
+    assert not any(ln.component == "vpc-endpoints" for ln in forecast.lines)
+    ips = line(forecast, "task-public-ips", "public IPv4")
+    assert ips.price_ref.endswith("vpc.public_ipv4_hour") and ips.qty_expected == 2 * 730
+
+
+def test_public_ip_cost_follows_the_task_count(fixtures_dir: Path, tmp_path: Path) -> None:
+    """At 100 req/s: 2, 4 and 10 tasks -> 1,460 / 2,920 / 7,300 address-hours x 0.005."""
+    system = build_system(fixtures_dir / "mono_a", tmp_path)
+    forecast, _ = budget_forecast(system, UsageBook({"avg_requests_per_second": 100.0}))
+    ips = line(forecast, "task-public-ips", "public IPv4")
+    assert (ips.usd_low, ips.usd_expected, ips.usd_spike) == pytest.approx((7.30, 14.60, 36.50))
+
+
+def test_scheduled_jobs_only_hold_an_address_while_they_run(
+    fixtures_dir: Path, tmp_path: Path
+) -> None:
+    """mono_c: 5 web services x 2 tasks x 730 h plus the cron job's 1.25 hours of runtime."""
+    forecast, _ = budget_forecast(build_system(fixtures_dir / "mono_c", tmp_path))
+    ips = line(forecast, "task-public-ips", "public IPv4")
+    assert ips.qty_expected == pytest.approx(5 * 2 * 730 + 5 * 0 + 30 * 10 / 60 * 1)

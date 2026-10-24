@@ -107,3 +107,16 @@ def test_run_checks_end_to_end_on_real_terraform(tmp_path: Path) -> None:
         ("terraform validate", "ok"),
     ]
     assert set(formatted) == set(generated())
+
+
+@slow_tf
+@needs_validate
+def test_budget_mode_terraform_passes_fmt_and_validate(tmp_path: Path) -> None:
+    provider = AwsProvider()
+    files = provider.render_iac(provider.choose(kitchen_sink_system(), Prefs(budget=True)))
+    _, results = run_checks(files, DEFAULT_MIRROR, tmp_path)
+    assert [(r.name, r.status) for r in results] == [
+        ("self-scan", "ok"),
+        ("terraform fmt", "ok"),
+        ("terraform validate", "ok"),
+    ]

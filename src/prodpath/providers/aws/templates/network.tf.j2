@@ -117,6 +117,7 @@ resource "aws_route" "private_nat" {
   nat_gateway_id         = aws_nat_gateway.main[0].id
 }
 
+{% if not budget %}
 # Endpoints keep image pulls, logs and secrets traffic off the NAT gateway.
 resource "aws_security_group" "vpc_endpoints" {
   name        = "${local.name}-vpc-endpoints"
@@ -131,6 +132,7 @@ resource "aws_security_group" "vpc_endpoints" {
     cidr_blocks = [aws_vpc.main.cidr_block]
   }
 }
+{% endif %}
 
 resource "aws_vpc_endpoint" "s3" {
   vpc_id            = aws_vpc.main.id
@@ -143,6 +145,7 @@ resource "aws_vpc_endpoint" "s3" {
   }
 }
 
+{% if not budget %}
 resource "aws_vpc_endpoint" "interface" {
   for_each = toset([{% for name in endpoints %}"{{ name }}"{{ ", " if not loop.last }}{% endfor %}])
 
@@ -157,4 +160,5 @@ resource "aws_vpc_endpoint" "interface" {
     Name = "${local.name}-${each.key}"
   }
 }
+{% endif %}
 {% endif %}

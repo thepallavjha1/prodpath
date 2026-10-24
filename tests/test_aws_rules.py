@@ -275,3 +275,28 @@ def test_the_visible_sizing_and_reason_match_what_the_rules_decided() -> None:
     assert "stateless" not in component.reason.lower()
     plain = by_name(choose([svc("api", "web", [*WEB, f("datastore", "postgres")])]), "ecs-svc-api")
     assert "0.5 vCPU / 1 GB" in plain.sizing and "stateless" in plain.reason.lower()
+
+
+def choose_budget(services: list[Service], env: str = "prod") -> Architecture:
+    prefs = Prefs(environment=env, budget=True)  # type: ignore[arg-type]
+    return choose_architecture(SystemModel(services=services), prefs)
+
+
+def test_budget_mode_marks_the_network_and_explains_the_trade_off() -> None:
+    arch = choose_budget([svc("api", "web", [*WEB, f("datastore", "postgres")])])
+    vpc = by_name(arch, "vpc")
+    assert vpc.params["mode"] == "budget"
+    assert "no" in vpc.sizing.lower() and "endpoint" in vpc.sizing.lower()
+    assert any("Budget mode" in u and "public" in u for u in arch.unknowns)
+    standard = choose([svc("api", "web", [*WEB, f("datastore", "postgres")])])
+    assert by_name(standard, "vpc").params["mode"] == "standard"
+    assert not any("Budget mode" in u for u in standard.unknowns)
+
+
+def test_budget_mode_keeps_everything_else_the_same() -> None:
+    services = [svc("api", "web", [*WEB, f("datastore", "postgres"), f("cache", "redis")])]
+    standard = {c.name: c for c in choose(services).components}
+    budget = {c.name: c for c in choose_budget(services).components}
+    assert standard.keys() == budget.keys()  # same components: ALB, RDS, Redis, autoscaling...
+    assert budget["ecs-svc-api"].params == standard["ecs-svc-api"].params
+    assert budget["alb"].sizing == standard["alb"].sizing

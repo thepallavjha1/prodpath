@@ -52,7 +52,9 @@
         }
       ],
       "items": [],
-      "params": {}
+      "params": {
+        "mode": "standard"
+      }
     },
     {
       "type": "ecs-cluster",

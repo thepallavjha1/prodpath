@@ -46,8 +46,12 @@ def _severity_by_share(share: float, high: float = HIGH_SHARE, medium: float = M
     return "high" if share >= high else "medium" if share >= medium else "low"
 
 
+def _budget(ctx: TrapContext) -> bool:
+    return any(c.params.get("mode") == "budget" for c in ctx.components("vpc"))
+
+
 def trap_no_outbound_path(ctx: TrapContext) -> Trap | None:
-    if not ctx.components("vpc"):
+    if not ctx.components("vpc") or _budget(ctx):  # budget tasks have public IPs: outbound works
         return None
     reasons = []
     callers = [
@@ -94,6 +98,29 @@ def trap_interface_endpoints(ctx: TrapContext) -> Trap | None:
         fix="Keep only the endpoints you need, run one AZ in non-production, or compare against a "
         "NAT gateway for your traffic before deciding.",
         est_monthly_usd_impact=round(fixed, 2),
+    )
+
+
+def trap_public_task_addresses(ctx: TrapContext) -> Trap | None:
+    if not _budget(ctx):
+        return None
+    tasks = sorted(
+        {
+            s
+            for c in ctx.components("ecs-service-web", "ecs-service-worker", "scheduled-task")
+            for s in c.serves
+        }
+    )
+    return Trap(
+        id="public-task-addresses",
+        severity="medium",
+        where="ecs.tf (assign_public_ip = true)",
+        why=f"Budget mode gives every task of {', '.join(tasks)} a public IPv4 address so it can "
+        "pull images and call AWS without endpoints or NAT. Only the load balancer security group "
+        "may reach them, so one wrong security group rule would expose a task directly.",
+        fix="Keep the task security group limited to the load balancer, or leave budget mode "
+        "once the endpoint cost is acceptable.",
+        est_monthly_usd_impact=round(ctx.cost(component="task-public-ips"), 2),
     )
 
 
@@ -380,7 +407,7 @@ TRAPS: list[TrapFn] = [
     trap_internet_egress, trap_autoscaling_max_cost, trap_alarm_subscription,
     trap_redis_replica, trap_multi_az_nonprod,
     trap_container_insights, trap_cross_az, trap_cloudfront_certificate, trap_spa_fallback,
-    trap_stateful_sessions, trap_heavy_ml_image,
+    trap_stateful_sessions, trap_heavy_ml_image, trap_public_task_addresses,
 ]  # fmt: skip
 
 

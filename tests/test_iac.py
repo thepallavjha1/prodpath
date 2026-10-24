@@ -332,3 +332,40 @@ def test_session_based_services_get_a_stickiness_block_on_their_target_group() -
     )
     assert "stickiness" not in render_iac(arch_for(plain))["alb.tf"]
     assert "containerPort = 8501" in render_iac(arch_for(system))["ecs.tf"].replace("  ", " ")
+
+
+def budget_files(system: SystemModel | None = None) -> dict[str, str]:
+    prefs = Prefs(budget=True)
+    chosen = system or kitchen_sink_system()
+    return render_iac(PROVIDER.choose(chosen, prefs))
+
+
+def test_budget_mode_drops_interface_endpoints_and_their_security_group() -> None:
+    standard = render_iac(arch_for(kitchen_sink_system()))["network.tf"]
+    budget = budget_files()["network.tf"]
+    assert 'resource "aws_vpc_endpoint" "interface"' in standard
+    assert 'resource "aws_vpc_endpoint" "interface"' not in budget
+    assert "vpc_endpoints" not in budget
+    assert 'resource "aws_vpc_endpoint" "s3"' in budget  # the S3 gateway endpoint is free: kept
+
+
+def test_budget_mode_runs_tasks_in_public_subnets_with_a_public_ip() -> None:
+    files = budget_files()
+    for name in ("ecs.tf", "scheduler.tf"):
+        assert "aws_subnet.public[*].id" in files[name], name
+        assert "assign_public_ip = true" in files[name].replace("  ", " ") or "true" in files[name]
+        assert "aws_subnet.private[*].id" not in files[name], name
+    standard = render_iac(arch_for(kitchen_sink_system()))
+    assert "aws_subnet.private[*].id" in standard["ecs.tf"]
+    assert "assign_public_ip = false" in standard["ecs.tf"].replace("  ", " ")
+
+
+def test_budget_mode_still_keeps_data_stores_private_and_tasks_reachable_only_via_the_alb() -> None:
+    files = budget_files()
+    assert "aws_subnet.private[*].id" in files["rds.tf"]
+    assert "aws_subnet.private[*].id" in files["elasticache.tf"]
+    ecs = files["ecs.tf"]
+    assert "security_groups = [aws_security_group.alb.id]" in ecs.replace("  ", " ")
+    assert "0.0.0.0/0" not in "".join(
+        body for body in INGRESS.findall(ecs)
+    )  # no task accepts traffic from the internet directly

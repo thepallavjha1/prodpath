@@ -53,9 +53,9 @@ resource "aws_scheduler_schedule" "{{ s.tf }}" {
       launch_type         = "FARGATE"
 
       network_configuration {
-        subnets          = aws_subnet.private[*].id
+        subnets          = {{ "aws_subnet.public[*].id" if budget else "aws_subnet.private[*].id" }}
         security_groups  = [aws_security_group.{{ s.tf }}.id]
-        assign_public_ip = false
+        assign_public_ip = {{ "true" if budget else "false" }}
       }
     }
   }

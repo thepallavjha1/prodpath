@@ -170,7 +170,7 @@ def render_plan(
         header,
         "# Production plan",
         f"Target: **{arch.provider.upper()}**, region `{arch.region}`, environment "
-        f"`{arch.environment}`. {len(system.services)} services detected, "
+        f"`{arch.environment}`{_budget_note(arch)}. {len(system.services)} services detected, "
         f"{len(arch.components)} components planned.",
         "## Services\n\n" + _services_section(system, arch, summaries),
         "## Architecture\n\n" + _architecture_section(arch),
@@ -184,6 +184,11 @@ def render_plan(
         "## Not verified by this tool\n\n" + "\n".join(f"- {n}" for n in NOT_VERIFIED),
     ]
     return "\n\n".join(sections) + "\n"
+
+
+def _budget_note(arch: Architecture) -> str:
+    budget = any(c.type == "vpc" and c.params.get("mode") == "budget" for c in arch.components)
+    return ", budget network" if budget else ""
 
 
 def _usd(amount: float) -> str:
@@ -278,7 +283,7 @@ def render_forecast(
     )
     summary = (
         f"Target: **{forecast.provider.upper()}**, region `{forecast.region}`, environment "
-        f"`{arch.environment}`.\n\n"
+        f"`{arch.environment}`{_budget_note(arch)}.\n\n"
         f"**Expected: about {_usd(forecast.total_expected)} per month**, ranging from "
         f"{_usd(forecast.total_low)} (low) to {_usd(forecast.total_spike)} (spike).\n\n"
         "| Scenario | Traffic vs expected | USD per month |\n|---|---|---|\n"

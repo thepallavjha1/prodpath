@@ -85,6 +85,8 @@ class Prefs(BaseModel):  # user choices for "choose" (CLI flags)
     provider: Literal["aws"] = "aws"
     region: str = "ap-south-1"
     environment: Literal["prod", "nonprod"] = "prod"  # prod: Multi-AZ data stores, 2 tasks
+    # Lean network (ADR-021): no interface VPC endpoints, tasks in public subnets with public IPs.
+    budget: bool = False
 
 
 class Component(BaseModel):

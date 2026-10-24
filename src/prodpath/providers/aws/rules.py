@@ -122,11 +122,22 @@ def rule_foundation(ctx: Context) -> list[Component]:
         Component(
             type="vpc",
             name="vpc",
-            sizing="2 AZs, public + private subnets, S3 and ECR VPC endpoints",
-            reason="Containers and data stores run in private subnets; endpoints avoid NAT data "
-            "charges for image pulls and S3 traffic.",
+            sizing=(
+                "2 AZs, public + private subnets, S3 gateway endpoint; no interface endpoints "
+                "or NAT (budget mode)"
+                if ctx.prefs.budget
+                else "2 AZs, public + private subnets, S3 and ECR VPC endpoints"
+            ),
+            reason=(
+                "Budget mode: tasks run in the public subnets with a public IP so there are no "
+                "interface endpoints or NAT to pay for; data stores stay in private subnets."
+                if ctx.prefs.budget
+                else "Containers and data stores run in private subnets; endpoints avoid NAT data "
+                "charges for image pulls and S3 traffic."
+            ),
             serves=compute_ids,
             evidence=_service_evidence(ctx.deployable),
+            params={"mode": "budget" if ctx.prefs.budget else "standard"},
         ),
         Component(
             type="ecs-cluster",
@@ -534,6 +545,11 @@ def rule_scaling(ctx: Context) -> list[Component]:
             "cpu_target": CPU_TARGET,
         }
     everyone = [(s, _anchor(s)) for s in ctx.deployable]
+    if ctx.prefs.budget:
+        ctx.unknowns.append(
+            "Budget mode: tasks run in public subnets with public IP addresses (no VPC endpoints "
+            "or NAT). Only the load balancer may reach them, by security group."
+        )
     components.append(
         _component(
             "sns-alerts",

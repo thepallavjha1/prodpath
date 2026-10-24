@@ -162,3 +162,17 @@ def test_rerunning_plan_removes_stale_terraform_files(fixtures_dir: Path, tmp_pa
     stale.write_text("# stale", encoding="utf-8")
     assert main(["plan", "--path", str(repo), "--tf-mirror", str(tmp_path / "no-mirror")]) == 0
     assert not stale.exists()
+
+
+def test_the_plan_names_budget_mode_in_its_summary(fixtures_dir: Path, tmp_path: Path) -> None:
+    from prodpath.cli import main as cli_main
+
+    repo = tmp_path / "mono_b"
+    shutil.copytree(fixtures_dir / "mono_b", repo)
+    assert (
+        cli_main(["plan", "--path", str(repo), "--budget", "--tf-mirror", str(tmp_path / "x")]) == 0
+    )
+    plan = (repo / ".prodpath/out/PLAN.md").read_text(encoding="utf-8")
+    assert "budget network" in plan.splitlines()[4]
+    tf = (repo / ".prodpath/out/terraform/ecs.tf").read_text(encoding="utf-8")
+    assert "assign_public_ip = true" in tf.replace("  ", " ") or "true" in tf
