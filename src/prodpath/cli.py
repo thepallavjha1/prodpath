@@ -7,6 +7,14 @@ from pathlib import Path
 
 from prodpath import __version__
 from prodpath.cache import HashCache
+from prodpath.calibrate import (
+    CalibrationError,
+    append_dataset,
+    compare,
+    now_stamp,
+    parse_cost_csv,
+    render_calibration,
+)
 from prodpath.detect import detect_services
 from prodpath.doctor import format_checks, run_doctor
 from prodpath.extract import extract_system
@@ -19,7 +27,7 @@ from prodpath.llm import (
     LLMError,
     OllamaLLM,
 )
-from prodpath.models import Inventory, Prefs, ServiceCandidate, Summaries, SystemModel
+from prodpath.models import Forecast, Inventory, Prefs, ServiceCandidate, Summaries, SystemModel
 from prodpath.providers import get_provider
 from prodpath.providers.aws.pricing import (
     DEFAULT_PRICE_DIR,
@@ -33,6 +41,7 @@ from prodpath.scan import scan_repo
 from prodpath.summarize import summarize_system
 
 OUTPUT_DIR = ".prodpath"
+DEFAULT_CALIBRATION_DATASET = Path.home() / ".cache" / "prodpath" / "calibration" / "runs.jsonl"
 
 
 GIT_URL_PREFIXES = ("http://", "https://", "git@", "ssh://", "git://")
@@ -121,6 +130,16 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--summarize", action="store_true", help="add local-LLM summaries (Ollama)")
     run.add_argument("--model", default=DEFAULT_MODEL, help="Ollama model tag for --summarize")
     run.add_argument("--num-ctx", type=int, default=DEFAULT_NUM_CTX, help="context window")
+    calibrate = sub.add_parser(
+        "calibrate", help="compare the forecast with a real Cost Explorer CSV"
+    )
+    calibrate.add_argument("csv", type=Path, help="Cost Explorer CSV grouped by service")
+    calibrate.add_argument("--path", type=repo_path, default=Path("."), help="repo (default: .)")
+    calibrate.add_argument("--months", type=float, default=1.0, help="months the CSV covers")
+    calibrate.add_argument(
+        "--dataset", type=Path, default=DEFAULT_CALIBRATION_DATASET,
+        help="local file that collects every calibration run",
+    )  # fmt: skip
     prices = sub.add_parser("prices", help="manage the local price snapshot")
     prices_sub = prices.add_subparsers(dest="prices_command", required=True)
     update = prices_sub.add_parser("update", help="download the public AWS Price List (networked)")
@@ -352,6 +371,35 @@ def run_forecast(repo: Path, prefs: Prefs, usage_path: Path | None, price_dir: P
     return 0
 
 
+def run_calibrate(repo: Path, csv_path: Path, months: float, dataset: Path) -> int:
+    forecast_file = repo.resolve() / OUTPUT_DIR / "forecast.json"
+    if not forecast_file.is_file():
+        print(
+            f"error: no forecast found; run `prodpath forecast --path {repo}` first",
+            file=sys.stderr,
+        )
+        return 1
+    try:
+        forecast = Forecast.model_validate_json(forecast_file.read_text(encoding="utf-8"))
+        actual = parse_cost_csv(csv_path.read_text(encoding="utf-8-sig"))
+        result = compare(forecast, actual, months)
+    except (CalibrationError, OSError, ValueError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 1
+    stamp = now_stamp()
+    target = repo.resolve() / OUTPUT_DIR / "out" / "CALIBRATION.md"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(render_calibration(result, stamp), encoding="utf-8", newline="\n")
+    append_dataset(dataset, result, stamp)
+    error_pct = result.total.error_pct
+    shown = "n/a" if error_pct is None else f"{error_pct * 100:+.0f}%"
+    print(f"wrote {target}")
+    print(
+        f"predicted ${result.total.predicted:,.2f} vs actual ${result.total.actual:,.2f} ({shown})"
+    )
+    return 0
+
+
 def _write_stage_outputs(repo: Path) -> int:
     """Leave inventory.json and system.json for inspection; return the service count."""
     out_dir = repo / OUTPUT_DIR
@@ -439,6 +487,8 @@ def main(argv: list[str] | None = None) -> int:
             args.model,
             args.num_ctx,
         )
+    if args.command == "calibrate":
+        return run_calibrate(args.path, args.csv, args.months, args.dataset)
     if args.command == "prices":
         return run_prices_update(args.region, args.dest)
     if args.command == "forecast" and args.write_usage_template is not None:
