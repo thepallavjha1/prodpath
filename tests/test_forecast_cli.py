@@ -78,7 +78,10 @@ def test_cli_forecast_writes_only_under_prodpath(
     repo = tmp_path / "mono_b"
     shutil.copytree(fixtures_dir / "mono_b", repo)
     before = {p.relative_to(repo).as_posix() for p in repo.rglob("*") if p.is_file()}
-    assert main(["forecast", "--path", str(repo), "--prices-dir", str(PRICES)]) == 0
+    one_rps = tmp_path / "one.toml"
+    one_rps.write_text("avg_requests_per_second = 1\n", encoding="utf-8")
+    args = ["forecast", "--path", str(repo), "--prices-dir", str(PRICES), "--usage", str(one_rps)]
+    assert main(args) == 0
     after = {p.relative_to(repo).as_posix() for p in repo.rglob("*") if p.is_file()}
     assert all(p.startswith(".prodpath/") for p in after - before)
     out = capsys.readouterr().out
@@ -147,3 +150,48 @@ def test_cli_prices_update_reports_counts_and_failures(
     monkeypatch.setattr(cli, "update_prices", failing_update)
     assert main(["prices", "update", "--dest", str(tmp_path)]) == 1
     assert "could not download AmazonECS" in capsys.readouterr().err
+
+
+def test_write_usage_template_creates_an_editable_file_and_does_nothing_else(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    target = tmp_path / "usage.toml"
+    assert main(["forecast", "--write-usage-template", str(target)]) == 0
+    text = target.read_text(encoding="utf-8")
+    assert "peak_requests_per_second = 20" in text and "[service." in text
+    assert "usage.toml" in capsys.readouterr().out
+    assert not (tmp_path / ".prodpath").exists()  # no analysis was run
+
+
+def test_the_written_template_is_accepted_by_forecast_and_changes_no_numbers(
+    fixtures_dir: Path, tmp_path: Path
+) -> None:
+    template = tmp_path / "usage.toml"
+    assert main(["forecast", "--write-usage-template", str(template)]) == 0
+    plain = prepare_copy(fixtures_dir, tmp_path / "plain")
+    templated = prepare_copy(fixtures_dir, tmp_path / "templated")
+    base = ["forecast", "--prices-dir", str(PRICES)]
+    assert main([*base, "--path", str(plain)]) == 0
+    assert main([*base, "--path", str(templated), "--usage", str(template)]) == 0
+    totals = [
+        (repo / ".prodpath/forecast.json").read_text(encoding="utf-8").split('"total_low"')[1][:60]
+        for repo in (plain, templated)
+    ]
+    assert totals[0] == totals[1]
+
+
+def test_write_usage_template_refuses_to_overwrite_without_force(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    target = tmp_path / "usage.toml"
+    target.write_text("mine = 1\n", encoding="utf-8")
+    assert main(["forecast", "--write-usage-template", str(target)]) == 1
+    assert "already exists" in capsys.readouterr().err
+    assert target.read_text(encoding="utf-8") == "mine = 1\n"
+    assert main(["forecast", "--write-usage-template", str(target), "--force"]) == 0
+    assert "peak_requests_per_second" in target.read_text(encoding="utf-8")
+
+
+def prepare_copy(fixtures_dir: Path, destination: Path) -> Path:
+    shutil.copytree(fixtures_dir / "mono_a", destination)
+    return destination

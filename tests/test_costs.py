@@ -20,7 +20,7 @@ from prodpath.forecast import UsageBook
 from prodpath.models import Forecast, Prefs
 from prodpath.providers.aws import AwsProvider
 from prodpath.providers.aws.pricing import PriceBook
-from tests.helpers import build_system, kitchen_sink_system
+from tests.helpers import ONE_RPS, build_system, kitchen_sink_system
 
 PRICES = Path(__file__).parent / "fixtures" / "prices"
 APPROX = {"abs": 0.005}  # "within rounding": half a cent
@@ -33,7 +33,7 @@ def forecast_for(
 ) -> Forecast:
     provider = AwsProvider(PRICES)
     arch = provider.choose(system, Prefs(environment=env))  # type: ignore[arg-type]
-    return provider.forecast(arch, system, usage or UsageBook())
+    return provider.forecast(arch, system, usage or UsageBook(ONE_RPS))
 
 
 def line(forecast: Forecast, component: str, dimension: str):  # type: ignore[no-untyped-def]
@@ -186,7 +186,7 @@ def test_a_service_override_applies_to_that_service_only(
     forecast = forecast_for(system, usage)
     heavy = line(forecast, "logs-apps-web", "ingestion").qty_expected
     light = line(forecast, "logs-apps-users", "ingestion").qty_expected
-    assert heavy == pytest.approx(10 * light)
+    assert heavy == pytest.approx(2.5 * light)  # 10 req/s for apps-web against the default 4
     names = {a.name: a.source for a in forecast.assumptions}
     assert names["avg_requests_per_second@apps-web"] == "user"
     assert names["avg_requests_per_second"] == "default"
@@ -205,7 +205,7 @@ def test_unpriced_dimensions_are_listed_never_guessed(fixtures_dir: Path, tmp_pa
     arch = provider.choose(system, Prefs(environment="prod"))
     book = provider.price_book("ap-south-1")
     del book._prices["alb.lcu_hour"]  # simulate a snapshot without that price
-    forecast = provider.forecast(arch, system, UsageBook())
+    forecast = provider.forecast(arch, system, UsageBook(ONE_RPS))
     assert any(
         "alb / capacity units" in item and "alb.lcu_hour" in item for item in forecast.not_priced
     )
@@ -299,7 +299,7 @@ def test_missing_cloudfront_prices_are_listed_not_guessed(
     provider = AwsProvider(PRICES)
     arch = provider.choose(system, Prefs())
     del provider.price_book("ap-south-1")._prices["cloudfront.out_gb.in"]
-    forecast = provider.forecast(arch, system, UsageBook())
+    forecast = provider.forecast(arch, system, UsageBook(ONE_RPS))
     assert any(
         "cloudfront-apps-spa" in item and "cloudfront.out_gb.in" in item
         for item in forecast.not_priced
@@ -374,8 +374,49 @@ def test_alarms_are_priced_from_the_same_list_the_terraform_uses(
     system = build_system(fixtures_dir / "mono_c", tmp_path)
     provider = AwsProvider(PRICES)
     arch = provider.choose(system, Prefs())
-    forecast = provider.forecast(arch, system, UsageBook())
+    forecast = provider.forecast(arch, system, UsageBook(ONE_RPS))
     alarms = line(forecast, "alarms", "standard alarms")
     assert alarms.qty_expected == len(build_alarms(arch)) == 24
     assert alarms.usd_expected == pytest.approx(2.40)
     assert alarms.usd_low == alarms.usd_expected == alarms.usd_spike
+
+
+def test_default_peak_semantics_match_the_hand_computed_forecast(
+    fixtures_dir: Path, tmp_path: Path
+) -> None:
+    """mono_a with the defaults: peak 20 req/s, ratio 5, so average 4 req/s and spike = 5x.
+
+    Constants (unchanged by traffic): 196.3012, as in the average-1 case above.
+    One task handles 25 req/s, so 4 and 20 req/s both fit in the minimum of 2 tasks.
+    Traffic, expected (4 req/s): LCU max(4/25, 4 x 10 x 3600 / 1e6) = 0.16 x 730 x 0.01 = 1.168;
+      logs 21.024 GB x 0.50 = 10.512, stored 21.024 x 0.03 = 0.63072;
+      endpoint data 21.024 x 0.01 = 0.21024; data out 105.12 GB x 0.10 = 10.512;
+      S3 PUT + GET do not follow requests per second: 1.00 + 1.00 = 2.00
+      -> 1.168 + 10.512 + 0.63072 + 0.21024 + 10.512 = 23.03296 request-driven, + 2.00 S3
+      = 25.03296 -> total 221.33416
+    Low (0.25x): 25.03296 x 0.25 = 6.25824 -> 202.55944
+    Spike (5x, a month at the 20 req/s peak): 25.03296 x 5 = 125.1648 -> 321.466
+    """
+    system = build_system(fixtures_dir / "mono_a", tmp_path)
+    provider = AwsProvider(PRICES)
+    arch = provider.choose(system, Prefs())
+    forecast = provider.forecast(arch, system, UsageBook())  # all defaults
+    assert forecast.total_low == pytest.approx(202.55944, **APPROX)
+    assert forecast.total_expected == pytest.approx(221.33416, **APPROX)
+    assert forecast.total_spike == pytest.approx(321.466, **APPROX)
+    named = {a.name: (a.value, a.source) for a in forecast.assumptions}
+    assert named["peak_requests_per_second"] == (20.0, "default")
+    assert named["avg_requests_per_second"] == (4.0, "default")
+    assert named["scenario_spike"] == (5.0, "default")
+
+
+def test_a_higher_peak_scales_capacity_at_the_peak_not_the_monthly_volume(
+    fixtures_dir: Path, tmp_path: Path
+) -> None:
+    """Peak 200 req/s (average 40): the spike month needs ceil(200 / 25) = 8 tasks, while the
+    expected month needs ceil(40 / 25) = 2. Expected vCPU: 0.5 x 2 x 730 x 0.04 = 29.20;
+    spike: 0.5 x 8 x 730 x 0.04 = 116.80."""
+    system = build_system(fixtures_dir / "mono_a", tmp_path)
+    forecast = forecast_for(system, UsageBook({"peak_requests_per_second": 200.0}))
+    vcpu = line(forecast, "ecs-svc-root", "vCPU")
+    assert (vcpu.usd_expected, vcpu.usd_spike) == pytest.approx((29.20, 116.80))

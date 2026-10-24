@@ -31,8 +31,10 @@ def test_run_writes_plan_terraform_and_forecast_in_one_command(
     fixtures_dir: Path, tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     repo = prepare(fixtures_dir, tmp_path)
+    one_rps = tmp_path / "one.toml"
+    one_rps.write_text("avg_requests_per_second = 1\n", encoding="utf-8")
     before = {p.relative_to(repo).as_posix() for p in repo.rglob("*") if p.is_file()}
-    assert main(run_args(repo, tmp_path)) == 0
+    assert main(run_args(repo, tmp_path, "--usage", str(one_rps))) == 0
     after = {p.relative_to(repo).as_posix() for p in repo.rglob("*") if p.is_file()}
     assert all(p.startswith(".prodpath/") for p in after - before)  # read-only on the repo
     out = repo / ".prodpath"

@@ -366,6 +366,8 @@ Implemented in Phase 6 (ADR-016). Contracts added to `models.py`: `Forecast` (li
 5. **Traps.** `providers/aws/traps.py` is a registry: each trap is one function from a context (architecture, system, forecast) to an optional `Trap` with severity, where, why, fix and an estimated monthly impact computed from the forecast when possible. Seed set: no outbound path (NAT) for services that call out or each other, interface VPC endpoint fixed cost, CloudWatch log ingestion, public IPv4 addresses, data transfer out, no autoscaling under spike, ElastiCache replica cost, Multi-AZ RDS in non-prod, Container Insights metrics, cross-AZ traffic. Each has a test where it fires and one where it must not. Traps are ranked by severity, then estimated monthly impact (an unpriced high-severity trap still comes first).
 6. **Calibration** (Phase 7). `prodpath calibrate costs.csv` compares prediction with a manually exported actual-cost CSV and records the error per dimension. This dataset is the long-term moat.
 
+Traffic model (Phase 9, ADR-020): inputs are `peak_requests_per_second` (default 20) and `peak_to_average_ratio` (default 5); average = peak / ratio drives monthly volume (data out, logs, requests) and the spike scenario is a month at the peak. An explicit `avg_requests_per_second` wins and implies peak = average x ratio. Budget mode (ADR-021): no interface endpoints, tasks in public subnets with public IPs, endpoint costs replaced by per-task public IPv4.
+
 Autoscaling (Phase 8): web services scale on CPU between `min_count` and `max_count`; the forecast computes tasks per scenario as `clamp(ceil((rps + inbound rps) / rps_per_task), min, max)` using the `rps_per_task` assumption (default 25, overridable per service). Workers stay at their minimum count. Alarms are priced at the standard-resolution alarm rate.
 
 Not included in any forecast (stated in FORECAST.md): NAT gateway, KMS, Route 53, ACM, WAF, cross-AZ and inter-service transfer, image-pull traffic through endpoints, RDS backup storage beyond the free allowance, CloudWatch metrics and alarms, Container Insights metrics, taxes and support plans.
@@ -402,7 +404,8 @@ prodpath/
   docs/        ARCHITECTURE.md ROADMAP.md DECISIONS.md CODING_STANDARDS.md TESTING.md SECURITY.md
   .claude/commands/   wrapup.md adr.md
   src/prodpath/
-    cli.py  config.py  models.py  cache.py  redact.py  doctor.py  iac_check.py
+    cli.py  config.py  models.py  cache.py  redact.py  doctor.py  iac_check.py  calibrate.py
+    web/          github.py  jobs.py  bundle.py  server.py  static/
     scan.py  detect.py  extract.py  edges.py  llm.py  summarize.py  forecast.py  render.py
     facts/        python.py  javascript.py  docker.py  compose.py  manifests.py
     providers/
@@ -430,6 +433,12 @@ Developer machine: ASUS TUF F15 with an NVIDIA GeForce GTX 1650, **4 GB VRAM** (
 - With 4 GB VRAM, default to a 3B to 4B instruct model at 4-bit quantization (about 2 to 2.5 GB) with `num_ctx=4096` to 8192; a 7B to 8B model will spill to CPU and be slow. Benchmark both in Phase 3. Model tags are examples; confirm availability with `ollama list` and benchmark in Phase 3.
 - `prodpath doctor` reports detected VRAM and warns when the configured model will spill to CPU.
 - Calls run sequentially. A 40-service monorepo should finish a cold run in minutes, and a warm run (cache hits) in seconds.
+
+## 14b. Web service (`src/prodpath/web/`, ADR-019)
+
+`prodpath serve` runs a standard-library HTTP server. Modules: `github.py` (URL allow-list, hardened shallow clone, size limits), `jobs.py` (job queue, stage progress, pipeline run, rate limit), `bundle.py` (turns a run into the JSON the UI renders, including evidence links to `github.com/<owner>/<repo>/blob/<sha>/<path>#L<line>`), `server.py` (routes, security headers), and `static/` (single-page UI: HTML, CSS, JS, no build step).
+
+API: `POST /api/analyze` (url + options) returns a job id; `GET /api/jobs/<id>` (stage, log, status); `GET /api/runs/<id>` (the result bundle); `POST /api/runs/<id>/forecast` (what-if usage and budget recomputed from the stored system, no re-clone); `GET /api/runs/<id>/download.zip` (PLAN.md, FORECAST.md, terraform/); `POST /api/prices/update` (explicit, networked). A built-in sample (the bundled `mono_d` fixture) runs without any network.
 
 ## 15. Extension points
 

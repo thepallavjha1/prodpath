@@ -16,6 +16,7 @@ This tool reads private source code and may sit next to secrets. Its safety come
 
 - Allowed destinations: `127.0.0.1` / `localhost` (Ollama), and the AWS Price List host, only during `prodpath prices update`.
 - The AWS Terraform provider is mirrored once, by the user or a developer, with `terraform providers mirror` from registry.terraform.io (approved 2026-10-21, ADR-015). prodpath itself never runs it and never networks for Terraform; validation reads the local mirror only.
+- **Web mode only** (`prodpath serve`, ADR-019): `github.com` over HTTPS for a shallow clone of a public repo the user pasted. The CLI commands never contact it.
 - Everything else is blocked in tests by the socket guard. Adding any new destination needs an ADR and a user decision.
 - No telemetry, crash reporting, update checks or "phone home" of any kind.
 
@@ -26,6 +27,15 @@ This tool reads private source code and may sit next to secrets. Its safety come
 - `Evidence.snippet` is passed through the redactor. A test with deliberately fake secrets must prove none survive into any output.
 - Generated Terraform uses secret *slots* (Secrets Manager or SSM entries without values). The plan tells the user to set values out-of-band.
 - Never write secrets to `MEMORY.md`, ADRs, fixtures (use obviously fake values), logs or commit messages.
+
+## 3b. Web mode: untrusted repos from the internet (ADR-019)
+
+- **URL allow-list:** only `https://github.com/<owner>/<repo>` (optionally `/tree/<branch>`). No other scheme, host, port, userinfo or path tricks; this also closes SSRF.
+- **Hardened clone:** `--depth 1 --single-branch --no-tags`, no submodules, `core.symlinks=false`, hooks disabled, no credential prompts (private repos fail fast), 120 s timeout, 300 MB and 30,000-file limits. Code is read, never executed. Symlinks are never read (security fix 88c3fb6); symlinked directories are not followed.
+- **Isolation:** each job gets its own temporary workspace, deleted after the analysis. Results are kept for one hour.
+- **Abuse limits:** 2 concurrent jobs, per-client rate limit, request body size cap.
+- **XSS:** repo-derived text (file names, snippets, env var names, even commit messages) is attacker-controlled. The UI writes it with `textContent` only, never as HTML, and a strict CSP (`script-src 'self'`, no inline script or style attributes) is the backstop.
+- **Binding:** `serve` listens on `127.0.0.1` by default. Binding publicly requires a reverse proxy with TLS and authentication in front; the server itself has none.
 
 ## 4. Prompt injection and untrusted repo content
 

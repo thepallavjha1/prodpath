@@ -86,3 +86,8 @@ def kitchen_sink_system() -> SystemModel:
             make_service("docs", "static", [make_fact("framework", "docusaurus")]),
         ]
     )
+
+
+# Old hand-computed tests assume one request per second on average; pinning it keeps their
+# arithmetic checkable now that the default traffic is a peak of 20 req/s (average 4).
+ONE_RPS = {"avg_requests_per_second": 1.0}

@@ -8,6 +8,7 @@ from prodpath.forecast import UsageBook
 from prodpath.models import Architecture, Edge, Evidence, Prefs, Service, SystemModel, Trap
 from prodpath.providers.aws import AwsProvider
 from prodpath.providers.aws.traps import TRAPS, TrapContext, find_traps
+from tests.helpers import ONE_RPS
 from tests.helpers import make_fact as f
 from tests.helpers import make_service as svc
 
@@ -21,7 +22,7 @@ def traps_for(
     provider = AwsProvider(PRICES)
     system = SystemModel(services=services, edges=edges or [])
     arch = provider.choose(system, Prefs(environment=env))  # type: ignore[arg-type]
-    forecast = provider.forecast(arch, system, UsageBook())
+    forecast = provider.forecast(arch, system, UsageBook(ONE_RPS))
     return {t.id: t for t in provider.traps(arch, system, forecast)}, arch
 
 
@@ -146,14 +147,15 @@ def test_multi_az_in_nonprod_fires_only_when_a_multi_az_database_is_planned() ->
     arch = provider.choose(system, Prefs(environment="nonprod"))
     assert all(c.params["multi_az"] == "false" for c in arch.components if c.type == "rds")
     assert "multi-az-rds-in-nonprod" not in {
-        t.id for t in provider.traps(arch, system, provider.forecast(arch, system, UsageBook()))
+        t.id
+        for t in provider.traps(arch, system, provider.forecast(arch, system, UsageBook(ONE_RPS)))
     }
 
     # Force the situation the rules never produce: Multi-AZ chosen in a non-production plan.
     for component in arch.components:
         if component.type == "rds":
             component.params.update({"multi_az": "true", "instance_class": "db.t4g.small"})
-    forecast = provider.forecast(arch, system, UsageBook())
+    forecast = provider.forecast(arch, system, UsageBook(ONE_RPS))
     found = {t.id: t for t in provider.traps(arch, system, forecast)}
     # (0.10 - 0.05) x 730 + (0.20 - 0.10) x 20 = 36.50 + 2.00
     assert found["multi-az-rds-in-nonprod"].est_monthly_usd_impact == pytest.approx(38.50)
@@ -211,7 +213,7 @@ def test_traps_are_ranked_by_severity_then_impact() -> None:
         ]
     )
     arch = provider.choose(system, Prefs())
-    forecast = provider.forecast(arch, system, UsageBook())
+    forecast = provider.forecast(arch, system, UsageBook(ONE_RPS))
     ranked = provider.traps(arch, system, forecast)
     assert ranked[0].id == "no-outbound-path"  # high severity first even though it is unpriced
     order = {"high": 0, "medium": 1, "low": 2}

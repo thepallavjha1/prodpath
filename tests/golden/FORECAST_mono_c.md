@@ -1,26 +1,26 @@
-<!-- prodpath 0.0.1 | generated 2000-01-01T00:00:00Z | input cd0344d44b4b -->
+<!-- prodpath 0.0.1 | generated 2000-01-01T00:00:00Z | input 97524223fc73 -->
 
 # What will this cost me, and what can bite me?
 
 Target: **AWS**, region `ap-south-1`, environment `prod`.
 
-**Expected: about $404.58 per month**, ranging from $382.55 (low) to $522.08 (spike).
+**Expected: about $492.71 per month**, ranging from $404.58 (low) to $962.71 (spike).
 
 | Scenario | Traffic vs expected | USD per month |
 |---|---|---|
-| Low | 0.25x | $382.55 |
-| Expected | 1x | $404.58 |
-| Spike | 5x | $522.08 |
+| Low | 0.25x | $404.58 |
+| Expected | 1x | $492.71 |
+| Spike | 5x | $962.71 |
 
-12 of 13 assumptions are defaults, not measurements: supply a `usage.toml` to replace them with your real numbers.
+14 of 15 assumptions are defaults, not measurements: supply a `usage.toml` to replace them with your real numbers.
 
 ## Biggest cost drivers
 
-1. `rds-postgres`: $77.00 (19%)
-2. `vpc-endpoints`: $58.67 (15%)
-3. `ecs-svc-apps-billing`: $36.50 (9%)
-4. `ecs-svc-apps-gateway`: $36.50 (9%)
-5. `ecs-svc-apps-notifier`: $36.50 (9%)
+1. `rds-postgres`: $77.00 (16%)
+2. `vpc-endpoints`: $59.46 (12%)
+3. `internet-egress`: $52.56 (11%)
+4. `ecs-svc-apps-billing`: $36.50 (7%)
+5. `ecs-svc-apps-gateway`: $36.50 (7%)
 
 ## Assumptions
 
@@ -28,17 +28,19 @@ Every number below depends on these. **Source** says where each came from: `user
 
 | Assumption | Value | Unit | Source | Note |
 |---|---|---|---|---|
-| `avg_requests_per_second` | 1 | req/s | **default** | Average external requests per second per web service. |
+| `avg_requests_per_second` | 4 | req/s | **default** | Derived: peak 20 req/s divided by the peak-to-average ratio 5. Set it directly in usage.toml if you know the average. |
 | `cron_minutes_per_run` | 10 | min | **default** | Duration of one scheduled job run. |
 | `cron_runs_per_month` | 30 | runs | **default** | Runs per scheduled job per month. |
 | `ecr_gb_per_repo` | 2 | GB | **default** | Image storage per repository. |
 | `hours_per_month` | 730 | h | **default** | AWS billing convention for a month. |
 | `internal_http_calls_per_request` | 1 | calls | **inferred** | One internal request through the load balancer per request, for each service-to-service URL found in the code: apps-gateway->apps-billing, apps-gateway->apps-users |
 | `log_kb_per_request` | 2 | KB | **default** | Log volume per request (not extracted from code yet). |
+| `peak_requests_per_second` | 20 | req/s | **default** | Busiest sustained requests per second per web service (the peak, not the average). |
+| `peak_to_average_ratio` | 5 | x | **default** | How many times busier the peak is than the monthly average. |
 | `response_kb` | 10 | KB | **default** | Average response size sent to the internet. |
 | `rps_per_task` | 25 | req/s | **default** | Requests per second one task handles at the CPU target. |
 | `scenario_low` | 0.25 | x | **default** | Traffic multiplier for the low scenario. |
-| `scenario_spike` | 5 | x | **default** | Traffic multiplier for the spike scenario. |
+| `scenario_spike` | 5 | x | **default** | A month run at the peak: the peak divided by the average. |
 | `task_starts_per_month` | 30 | starts | **default** | Starts per task per month; each start reads its secrets. |
 | `worker_log_gb_per_month` | 1 | GB | **default** | Log volume per worker or scheduled service. |
 
@@ -61,31 +63,31 @@ Quantities are monthly (730 hours). Always-on resources do not change between sc
 | `ecs-svc-apps-web` | vCPU-hours | 730.00 | vCPU-h | $0.04 | `TEST/fargate.vcpu_hour/fargate.vcpu_hour` | $29.20 | $29.20 | $29.20 |
 | `ecs-svc-apps-web` | memory GB-hours | 1,460.00 | GB-h | $0.005 | `TEST/fargate.gb_hour/fargate.gb_hour` | $7.30 | $7.30 | $7.30 |
 | `alb` | load balancer hours | 730.00 | h | $0.02 | `TEST/alb.hour/alb.hour` | $14.60 | $14.60 | $14.60 |
-| `alb` | capacity units (LCU-hours) | 204.40 | LCU-h | $0.01 | `TEST/alb.lcu_hour/alb.lcu_hour` | $0.51 | $2.04 | $10.22 |
+| `alb` | capacity units (LCU-hours) | 817.60 | LCU-h | $0.01 | `TEST/alb.lcu_hour/alb.lcu_hour` | $2.04 | $8.18 | $40.88 |
 | `alb` | public IPv4 addresses (one per AZ) | 1,460.00 | address-h | $0.005 | `TEST/vpc.public_ipv4_hour/vpc.public_ipv4_hour` | $7.30 | $7.30 | $7.30 |
-| `logs-apps-billing` | log ingestion | 5.26 | GB | $0.5 | `TEST/cloudwatch.logs_ingest_gb/cloudwatch.logs_ingest_gb` | $0.66 | $2.63 | $13.14 |
-| `logs-apps-billing` | log storage | 5.26 | GB-month | $0.03 | `TEST/cloudwatch.logs_storage_gb_month/cloudwatch.logs_storage_gb_month` | $0.04 | $0.16 | $0.79 |
-| `logs-apps-gateway` | log ingestion | 5.26 | GB | $0.5 | `TEST/cloudwatch.logs_ingest_gb/cloudwatch.logs_ingest_gb` | $0.66 | $2.63 | $13.14 |
-| `logs-apps-gateway` | log storage | 5.26 | GB-month | $0.03 | `TEST/cloudwatch.logs_storage_gb_month/cloudwatch.logs_storage_gb_month` | $0.04 | $0.16 | $0.79 |
-| `logs-apps-notifier` | log ingestion | 5.26 | GB | $0.5 | `TEST/cloudwatch.logs_ingest_gb/cloudwatch.logs_ingest_gb` | $0.66 | $2.63 | $13.14 |
-| `logs-apps-notifier` | log storage | 5.26 | GB-month | $0.03 | `TEST/cloudwatch.logs_storage_gb_month/cloudwatch.logs_storage_gb_month` | $0.04 | $0.16 | $0.79 |
+| `logs-apps-billing` | log ingestion | 21.02 | GB | $0.5 | `TEST/cloudwatch.logs_ingest_gb/cloudwatch.logs_ingest_gb` | $2.63 | $10.51 | $52.56 |
+| `logs-apps-billing` | log storage | 21.02 | GB-month | $0.03 | `TEST/cloudwatch.logs_storage_gb_month/cloudwatch.logs_storage_gb_month` | $0.16 | $0.63 | $3.15 |
+| `logs-apps-gateway` | log ingestion | 21.02 | GB | $0.5 | `TEST/cloudwatch.logs_ingest_gb/cloudwatch.logs_ingest_gb` | $2.63 | $10.51 | $52.56 |
+| `logs-apps-gateway` | log storage | 21.02 | GB-month | $0.03 | `TEST/cloudwatch.logs_storage_gb_month/cloudwatch.logs_storage_gb_month` | $0.16 | $0.63 | $3.15 |
+| `logs-apps-notifier` | log ingestion | 21.02 | GB | $0.5 | `TEST/cloudwatch.logs_ingest_gb/cloudwatch.logs_ingest_gb` | $2.63 | $10.51 | $52.56 |
+| `logs-apps-notifier` | log storage | 21.02 | GB-month | $0.03 | `TEST/cloudwatch.logs_storage_gb_month/cloudwatch.logs_storage_gb_month` | $0.16 | $0.63 | $3.15 |
 | `logs-apps-reports` | log ingestion | 1.00 | GB | $0.5 | `TEST/cloudwatch.logs_ingest_gb/cloudwatch.logs_ingest_gb` | $0.50 | $0.50 | $0.50 |
 | `logs-apps-reports` | log storage | 1.00 | GB-month | $0.03 | `TEST/cloudwatch.logs_storage_gb_month/cloudwatch.logs_storage_gb_month` | $0.03 | $0.03 | $0.03 |
-| `logs-apps-users` | log ingestion | 5.26 | GB | $0.5 | `TEST/cloudwatch.logs_ingest_gb/cloudwatch.logs_ingest_gb` | $0.66 | $2.63 | $13.14 |
-| `logs-apps-users` | log storage | 5.26 | GB-month | $0.03 | `TEST/cloudwatch.logs_storage_gb_month/cloudwatch.logs_storage_gb_month` | $0.04 | $0.16 | $0.79 |
-| `logs-apps-web` | log ingestion | 5.26 | GB | $0.5 | `TEST/cloudwatch.logs_ingest_gb/cloudwatch.logs_ingest_gb` | $0.66 | $2.63 | $13.14 |
-| `logs-apps-web` | log storage | 5.26 | GB-month | $0.03 | `TEST/cloudwatch.logs_storage_gb_month/cloudwatch.logs_storage_gb_month` | $0.04 | $0.16 | $0.79 |
+| `logs-apps-users` | log ingestion | 21.02 | GB | $0.5 | `TEST/cloudwatch.logs_ingest_gb/cloudwatch.logs_ingest_gb` | $2.63 | $10.51 | $52.56 |
+| `logs-apps-users` | log storage | 21.02 | GB-month | $0.03 | `TEST/cloudwatch.logs_storage_gb_month/cloudwatch.logs_storage_gb_month` | $0.16 | $0.63 | $3.15 |
+| `logs-apps-web` | log ingestion | 21.02 | GB | $0.5 | `TEST/cloudwatch.logs_ingest_gb/cloudwatch.logs_ingest_gb` | $2.63 | $10.51 | $52.56 |
+| `logs-apps-web` | log storage | 21.02 | GB-month | $0.03 | `TEST/cloudwatch.logs_storage_gb_month/cloudwatch.logs_storage_gb_month` | $0.16 | $0.63 | $3.15 |
 | `vpc-endpoints` | 4 interface endpoints x 2 AZs | 5,840.00 | endpoint-h | $0.01 | `TEST/vpc.endpoint_hour/vpc.endpoint_hour` | $58.40 | $58.40 | $58.40 |
-| `vpc-endpoints` | data processed (logs) | 27.28 | GB | $0.01 | `TEST/vpc.endpoint_gb/vpc.endpoint_gb` | $0.08 | $0.27 | $1.32 |
+| `vpc-endpoints` | data processed (logs) | 106.12 | GB | $0.01 | `TEST/vpc.endpoint_gb/vpc.endpoint_gb` | $0.27 | $1.06 | $5.27 |
 | `rds-postgres` | db.t4g.small instance hours (multi_az) | 730.00 | h | $0.1 | `TEST/rds.instance.postgres.db.t4g.small.multi_az/rds.instance.postgres.db.t4g.small.multi_az` | $73.00 | $73.00 | $73.00 |
 | `rds-postgres` | gp3 storage | 20.00 | GB-month | $0.2 | `TEST/rds.storage.gp3.multi_az.postgres/rds.storage.gp3.multi_az.postgres` | $4.00 | $4.00 | $4.00 |
 | `elasticache-redis` | cache.t4g.micro node hours x 2 | 1,460.00 | node-h | $0.02 | `TEST/elasticache.node.redis.cache.t4g.micro/elasticache.node.redis.cache.t4g.micro` | $29.20 | $29.20 | $29.20 |
 | `secrets` | 3 slots + 1 RDS-managed | 4.00 | secret-month | $0.5 | `TEST/secrets.secret_month/secrets.secret_month` | $2.00 | $2.00 | $2.00 |
 | `secrets` | API requests at task start | 180.00 | requests | $1e-05 | `TEST/secrets.api_request/secrets.api_request` | $0.00 | $0.00 | $0.00 |
 | `ecr` | 6 repositories | 12.00 | GB-month | $0.1 | `TEST/ecr.storage_gb_month/ecr.storage_gb_month` | $1.20 | $1.20 | $1.20 |
-| `internet-egress` | data transfer out to the internet | 131.40 | GB | $0.1 | `TEST/dt.out_gb/dt.out_gb` | $3.29 | $13.14 | $65.70 |
+| `internet-egress` | data transfer out to the internet | 525.60 | GB | $0.1 | `TEST/dt.out_gb/dt.out_gb` | $13.14 | $52.56 | $262.80 |
 | `alarms` | 24 standard alarms | 24.00 | alarm-month | $0.1 | `TEST/cloudwatch.alarm_month/cloudwatch.alarm_month` | $2.40 | $2.40 | $2.40 |
-| **Total** |  |  |  |  |  | $382.55 | $404.58 | $522.08 |
+| **Total** |  |  |  |  |  | $404.58 | $492.71 | $962.71 |
 
 ## What can bite me
 
@@ -100,7 +102,25 @@ Ranked by severity, then estimated monthly impact.
 
 **Fix:** Set max_count to what you are willing to pay for, alarm on running task count, and load-test one task to replace the default rps_per_task assumption with a real number.
 
-### 2. no-outbound-path (high)
+### 2. log-ingestion (high)
+
+**Where:** ecs.tf (aws_cloudwatch_log_group)  
+**Impact:** about $53.06/month
+
+**Why it bites:** CloudWatch bills every GB of logs ingested, and ingestion grows with traffic and log verbosity. At the spike scenario ingestion alone is about $263.30/month.
+
+**Fix:** Log at INFO or above in production, do not log request bodies, sample noisy lines, and keep retention short (set to 30 days here).
+
+### 3. internet-egress (high)
+
+**Where:** alb.tf / static_site.tf (every service that serves users)  
+**Impact:** about $52.56/month
+
+**Why it bites:** Data transferred out to the internet is billed per GB and scales with traffic and response size. At the spike scenario it is about $262.80/month.
+
+**Fix:** Compress responses, cache at a CDN, and avoid returning large payloads by default.
+
+### 4. no-outbound-path (high)
 
 **Where:** network.tf (enable_nat_gateway = false by default)  
 **Impact:** not priced
@@ -109,7 +129,7 @@ Ranked by severity, then estimated monthly impact.
 
 **Fix:** Either set enable_nat_gateway = true (a NAT gateway bills per hour and per GB processed; its price is not in this forecast), add VPC endpoints for the AWS services you use, or route service-to-service calls through an internal address.
 
-### 3. interface-endpoint-fixed-cost (medium)
+### 5. interface-endpoint-fixed-cost (medium)
 
 **Where:** network.tf (aws_vpc_endpoint.interface)  
 **Impact:** about $58.40/month
@@ -117,24 +137,6 @@ Ranked by severity, then estimated monthly impact.
 **Why it bites:** Interface VPC endpoints bill for every AZ-hour whether or not traffic flows. For a small system this fixed cost can exceed the compute it supports.
 
 **Fix:** Keep only the endpoints you need, run one AZ in non-production, or compare against a NAT gateway for your traffic before deciding.
-
-### 4. log-ingestion (medium)
-
-**Where:** ecs.tf (aws_cloudwatch_log_group)  
-**Impact:** about $13.64/month
-
-**Why it bites:** CloudWatch bills every GB of logs ingested, and ingestion grows with traffic and log verbosity. At the spike scenario ingestion alone is about $66.20/month.
-
-**Fix:** Log at INFO or above in production, do not log request bodies, sample noisy lines, and keep retention short (set to 30 days here).
-
-### 5. internet-egress (medium)
-
-**Where:** alb.tf / static_site.tf (every service that serves users)  
-**Impact:** about $13.14/month
-
-**Why it bites:** Data transferred out to the internet is billed per GB and scales with traffic and response size. At the spike scenario it is about $65.70/month.
-
-**Fix:** Compress responses, cache at a CDN, and avoid returning large payloads by default.
 
 ### 6. alarm-subscription-unconfirmed (medium)
 

@@ -10,7 +10,7 @@ from prodpath.cache import HashCache
 from prodpath.detect import detect_services
 from prodpath.doctor import format_checks, run_doctor
 from prodpath.extract import extract_system
-from prodpath.forecast import UsageBook, UsageError, load_usage_file
+from prodpath.forecast import UsageBook, UsageError, load_usage_file, usage_template
 from prodpath.iac_check import DEFAULT_MIRROR, TerraformReport, run_checks
 from prodpath.llm import (
     DEFAULT_MAX_INPUT_TOKENS,
@@ -88,6 +88,11 @@ def build_parser() -> argparse.ArgumentParser:
     forecast.add_argument("--region", default=Prefs().region, help="cloud region")
     forecast.add_argument("--env", default="prod", choices=["prod", "nonprod"], help="environment")
     forecast.add_argument("--usage", type=Path, help="usage.toml with your real numbers")
+    forecast.add_argument(
+        "--write-usage-template", type=Path, metavar="FILE",
+        help="write an editable usage.toml with every assumption and its default, then stop",
+    )  # fmt: skip
+    forecast.add_argument("--force", action="store_true", help="overwrite the template file")
     forecast.add_argument(
         "--prices-dir", type=Path, default=DEFAULT_PRICE_DIR, help="price snapshots"
     )
@@ -387,6 +392,15 @@ def run_all(
     return 0
 
 
+def write_usage_template(target: Path, force: bool) -> int:
+    if target.exists() and not force:
+        print(f"error: {target} already exists (use --force to overwrite it)", file=sys.stderr)
+        return 1
+    target.write_text(usage_template(), encoding="utf-8", newline="\n")
+    print(f"wrote {target}: edit the numbers you know, then pass --usage {target}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.WARNING)
@@ -411,6 +425,8 @@ def main(argv: list[str] | None = None) -> int:
         )
     if args.command == "prices":
         return run_prices_update(args.region, args.dest)
+    if args.command == "forecast" and args.write_usage_template is not None:
+        return write_usage_template(args.write_usage_template, args.force)
     if args.command == "forecast":
         prefs = Prefs(provider=args.provider, region=args.region, environment=args.env)
         return run_forecast(args.path, prefs, args.usage, args.prices_dir)
