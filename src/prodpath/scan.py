@@ -30,6 +30,7 @@ class ScanStats:
     hashed: int = 0  # files actually read and hashed this run
     cached: int = 0  # files served from the cache
     unsupported_gitignore: list[str] = field(default_factory=list)
+    skipped_symlinks: int = 0  # never followed: a symlink could point outside the repo
 
 
 def _load_gitignore(repo: Path, stats: ScanStats) -> list[str]:
@@ -90,8 +91,12 @@ def scan_repo(repo: Path, cache: HashCache) -> tuple[Inventory, ScanStats]:
 
 
 def _entry_for(path: Path, rel_path: str, cache: HashCache, stats: ScanStats) -> FileEntry:
-    info = path.stat()
     language = LANGUAGES.get(path.suffix.lower())
+    if path.is_symlink():
+        # The repo is untrusted: a link to ~/.ssh/id_rsa must not be read into any output.
+        stats.skipped_symlinks += 1
+        return FileEntry(path=rel_path, hash="", size=0, language=language, skipped="symlink")
+    info = path.stat()
     if info.st_size > MAX_HASH_BYTES:
         return FileEntry(path=rel_path, hash="", size=info.st_size, language=language,
                          skipped="too large")  # fmt: skip

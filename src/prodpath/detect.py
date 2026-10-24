@@ -81,7 +81,10 @@ class Repo:
         return sorted(_join(d, name) for d, names in self.by_dir.items() for name in names)
 
     def read(self, rel_path: str) -> str:
-        data = (self.root / rel_path).read_bytes()[:MAX_READ_BYTES]
+        target = self.root / rel_path
+        if target.is_symlink():  # defence in depth: scan already excludes symlinks
+            raise OSError(f"refusing to read a symlink: {rel_path}")
+        data = target.read_bytes()[:MAX_READ_BYTES]
         return data.decode("utf-8", errors="replace")
 
     def is_inside_claimed(self, root: str) -> bool:
@@ -305,6 +308,8 @@ def detect_leftover_manifests(repo: Repo, workspace_roots: set[str]) -> None:
 def detect_services(repo_path: Path, inventory: Inventory) -> list[ServiceCandidate]:
     by_dir: dict[str, set[str]] = {}
     for entry in inventory.files:
+        if entry.skipped == "symlink":
+            continue  # never let a link define or describe a service
         by_dir.setdefault(posixpath.dirname(entry.path) or ".", set()).add(
             posixpath.basename(entry.path)
         )

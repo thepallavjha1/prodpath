@@ -60,6 +60,8 @@ def _is_test_path(path: str) -> bool:
 
 
 def _read(repo: Path, path: str) -> str:
+    if (repo / path).is_symlink():  # defence in depth: scan already excludes symlinks
+        raise OSError(f"refusing to read a symlink: {path}")
     return (repo / path).read_bytes()[:MAX_READ_BYTES].decode("utf-8", errors="replace")
 
 
